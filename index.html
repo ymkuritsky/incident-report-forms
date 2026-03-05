@@ -1,0 +1,1692 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Maryland OHCQ — Facility Reported Incident Forms</title>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script type="module">
+    import { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell,
+             HeadingLevel, AlignmentType, BorderStyle, WidthType, ShadingType,
+             Header, Footer, PageNumber, convertInchesToTwip } from "https://esm.sh/docx@9.1.1?bundle-deps";
+    window.docxLib = { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell,
+                       HeadingLevel, AlignmentType, BorderStyle, WidthType, ShadingType,
+                       Header, Footer, PageNumber, convertInchesToTwip };
+  </script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            'mdh-blue': '#1a5276',
+            'mdh-light': '#2980b9',
+            'mdh-accent': '#d4e6f1',
+          },
+        },
+      },
+    };
+  </script>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; }
+    .field-input {
+      width: 100%; border: 1px solid #d1d5db; border-radius: 0.375rem;
+      padding: 0.75rem 1rem; font-size: 1rem; min-height: 44px;
+      transition: border-color 0.15s, box-shadow 0.15s;
+      outline: none;
+    }
+    .field-input:focus { border-color: #2980b9; box-shadow: 0 0 0 2px rgba(41,128,185,0.25); }
+    .field-input.error { border-color: #ef4444; box-shadow: 0 0 0 1px #ef4444; }
+    textarea.field-input { resize: vertical; }
+    .tooltip-trigger {
+      border-bottom: 1px dashed #2980b9;
+      cursor: help;
+      position: relative;
+    }
+    .tooltip-trigger:hover::after {
+      content: attr(data-tooltip);
+      position: absolute;
+      bottom: 100%;
+      left: 0;
+      background: #1a5276;
+      color: white;
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 0.75rem;
+      font-weight: normal;
+      max-width: 350px;
+      white-space: normal;
+      z-index: 100;
+      line-height: 1.4;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    }
+  </style>
+</head>
+<body class="bg-gray-50 text-gray-900">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useCallback, useMemo } = React;
+    /* docx library loaded via ES module into window.docxLib -- accessed lazily in exportToDocx */
+
+    /* ==============================================================
+       CONSTANTS
+       ============================================================== */
+
+    const FACILITY_DEFAULTS = {
+      facility_name: "Coffman Nursing Home & Rehabilitation Center",
+      address: "1304 Pennsylvania Ave. Hagerstown MD 21742",
+      facility_phone: "(301) 733-2914",
+      ccn: "215352",
+    };
+
+    const ALLEGATION_OPTIONS = [
+      { id: "physical_abuse", label: "Physical Abuse" },
+      { id: "sexual_abuse", label: "Sexual Abuse" },
+      { id: "mental_verbal_abuse", label: "Mental/Verbal Abuse" },
+      { id: "deprivation", label: "Deprivation of Goods and Services by Staff" },
+      { id: "neglect", label: "Neglect" },
+      { id: "misappropriation", label: "Misappropriation of Resident Property / Exploitation" },
+      { id: "injury_unknown", label: "Injury of Unknown Source" },
+      { id: "suspected_crime", label: "Suspected Crime" },
+    ];
+
+    /* ==============================================================
+       REGULATORY DEFINITIONS (for tooltips)
+       ============================================================== */
+
+    const DEFINITIONS = {
+      "abuse": "The willful infliction of injury, unreasonable confinement, intimidation, or punishment with resulting physical harm, pain or mental anguish.",
+      "neglect": "The failure of the facility, its employees or service providers to provide goods and services necessary to avoid physical harm, pain, mental anguish or emotional distress.",
+      "exploitation": "Taking advantage of a resident for personal gain through manipulation, intimidation, threats, or coercion.",
+      "sexual abuse": "Non-consensual sexual contact of any type with a resident.",
+      "misappropriation": "The deliberate misplacement, exploitation, or wrongful use of a resident\u2019s belongings or money without consent.",
+      "serious bodily injury": "An injury involving extreme physical pain, substantial risk of death, or protracted impairment of bodily function.",
+      "injuries of unknown source": "An injury where: source not observed, not explained by resident, and suspicious due to extent/location/pattern.",
+      "mistreatment": "Inappropriate treatment or exploitation of a resident.",
+    };
+
+    function applyTooltips(text) {
+      if (!text) return text;
+      const sortedTerms = Object.keys(DEFINITIONS).sort((a, b) => b.length - a.length);
+      const parts = [];
+      let remaining = text;
+      let key = 0;
+
+      while (remaining.length > 0) {
+        let earliestIdx = remaining.length;
+        let matchedTerm = null;
+
+        for (const term of sortedTerms) {
+          const idx = remaining.toLowerCase().indexOf(term.toLowerCase());
+          if (idx !== -1 && idx < earliestIdx) {
+            earliestIdx = idx;
+            matchedTerm = term;
+          }
+        }
+
+        if (matchedTerm === null) {
+          parts.push(remaining);
+          break;
+        }
+
+        if (earliestIdx > 0) {
+          parts.push(remaining.substring(0, earliestIdx));
+        }
+
+        const originalText = remaining.substring(earliestIdx, earliestIdx + matchedTerm.length);
+        parts.push(
+          <span key={key++} className="tooltip-trigger" data-tooltip={DEFINITIONS[matchedTerm]}>
+            {originalText}
+          </span>
+        );
+
+        remaining = remaining.substring(earliestIdx + matchedTerm.length);
+      }
+
+      return parts;
+    }
+
+    /* ==============================================================
+       INSTRUCTION TEXT CONSTANTS
+       ============================================================== */
+
+    const INITIAL_INSTRUCTION_TEXT = `This form can be used to ensure the reporting of reasonable suspicion of crimes against a resident or individual receiving care from the facility within prescribed timeframes to the appropriate entities, consistent with Section 1150B of the Act; and all alleged violations involving abuse, neglect, exploitation or mistreatment, including injuries of unknown source and misappropriation of resident property. The information collected is critical in determining what may be occurring in a facility and the effect(s) that it may have on residents.
+
+Section 1150B(b) of the Social Security Act \u2014
+\u2022 result in serious bodily injury, the individual shall report the suspicion immediately, but not later than 2 hours after forming the suspicion; and
+\u2022 do not result in serious bodily injury, the individual shall report the suspicion not later than 24 hours after forming the suspicion.
+Each covered individual shall report to the Secretary and 1 or more law enforcement entities for the political subdivision in which the facility is located any reasonable suspicion of a crime (as defined by the law of the applicable political subdivision) against any individual who is a resident of, or is receiving care from, the facility.
+Timing \u2014 If the events that cause the suspicion\u2014
+
+42 C.F.R. 483.12(c)(1) (F609) - In response to allegations of abuse, neglect, exploitation, or mistreatment, the facility must: (1) Ensure that all alleged violations involving abuse, neglect, exploitation or mistreatment, including injuries of unknown source and misappropriation of resident property, are reported immediately, but not later than 2 hours after the allegation is made, if the events that cause the allegation involve abuse or result in serious bodily injury, or not later than 24 hours if the events that cause the allegation do not involve abuse and do not result in serious bodily injury, to the administrator of the facility and to other officials (including to the State Survey Agency and adult protective services where state law provides for jurisdiction in long-term care facilities) in accordance with State law through established procedures.
+
+483.12(c)(4) - Report the results of all investigations to the administrator or his or her designated representative and to other officials in accordance with State law, including to the State Survey Agency, within 5 working days of the incident, and if the alleged violation is verified appropriate corrective action must be taken.
+
+\u201cAbuse,\u201d is defined at \u00a7483.5 as \u201cthe willful infliction of injury, unreasonable confinement, intimidation, or punishment with resulting physical harm, pain or mental anguish. Abuse also includes the deprivation by an individual, including a caretaker, of goods or services that are necessary to attain or maintain physical, mental, and psychosocial well-being. Instances of abuse of all residents, irrespective of any mental or physical condition, cause physical harm, pain or mental anguish. It includes verbal abuse, sexual abuse, physical abuse, and mental abuse including abuse facilitated or enabled through the use of technology.\u201d
+
+\u201cAlleged violation\u201d is a situation or occurrence that is observed or reported by staff, resident, relative, visitor or others but has not yet been investigated and, if verified, could be noncompliance with the Federal requirements related to mistreatment, exploitation, neglect, or abuse, including injuries of unknown source, and misappropriation of resident property.
+
+\u201cCrime\u201d: Section 1150B(b)(1) of the Act provides that a \u201ccrime\u201d is defined by law of the applicable political subdivision where the facility is located. A political subdivision would be a city, county, township or village, or any local unit of government created by or pursuant to State law.
+
+\u201cCriminal sexual abuse\u201d: In the case of \u201ccriminal sexual abuse\u201d which is defined in section 2011(19)(B) of the Act (as added by section 6703(a)(1)(C) of the Affordable Care Act), serious bodily injury/harm shall be considered to have occurred if the conduct causing the injury is conduct described in section 2241 (relating to aggravated sexual abuse) or section 2242 (relating to sexual abuse) of Title 18, United States Code, or any similar offense under State law. In other words, serious bodily injury includes sexual intercourse with a resident by force or incapacitation or through threats of harm to the resident or others or any sexual act involving a child. Serious bodily injury also includes sexual intercourse with a resident who is incapable of declining to participate in the sexual act or lacks the ability to understand the nature of the sexual act.
+
+\u201cExploitation,\u201d as defined at \u00a7483.5, means \u201ctaking advantage of a resident for personal gain, through the use of manipulation, intimidation, threats, or coercion.\u201d
+
+\u201cInjuries of unknown source\u201d \u2014 An injury should be classified as an \u201cinjury of unknown source\u201d when all of the following criteria are met:
+The source of the injury was not observed by any person; and
+The source of the injury could not be explained by the resident; and
+The injury is suspicious because of the extent of the injury or the location of the injury (e.g., the injury is located in an area not generally vulnerable to trauma) or the number of injuries observed at one particular point in time or the incidence of injuries over time.
+
+\u201cMisappropriation of resident property,\u201d as defined at \u00a7483.5, means \u201cthe deliberate misplacement, exploitation, or wrongful, temporary, or permanent use of a resident\u2019s belongings or money without the resident\u2019s consent.\u201d
+
+\u201cMistreatment,\u201d as defined at \u00a7483.5, is \u201cinappropriate treatment or exploitation of a resident.\u201d
+
+\u201cNeglect,\u201d as defined at \u00a7483.5, means \u201cthe failure of the facility, its employees or service providers to provide goods and services to a resident that are necessary to avoid physical harm, pain, mental anguish or emotional distress.\u201d
+
+\u201cSerious bodily injury\u201d means an injury involving extreme physical pain; involving substantial risk of death; involving protracted loss or impairment of the function of a bodily member, organ, or mental faculty; requiring medical intervention such as surgery, hospitalization, or physical rehabilitation; or an injury resulting from criminal sexual abuse (See section 2011(19)(A) of the Act).
+
+\u201cSexual abuse,\u201d is defined at \u00a7483.5 as \u201cnon-consensual sexual contact of any type with a resident.\u201d
+
+\u201cWillful,\u201d is defined at \u00a7483.5 in the definition of \u201cabuse,\u201d and \u201cmeans the individual must have acted deliberately, not that the individual must have intended to inflict injury or harm.\u201d`;
+
+    const FOLLOWUP_INSTRUCTION_TEXT = `Within five (5) business days of the incident, the facility must provide in its report sufficient information to describe the results of the investigation, and indicate any corrective actions taken if the allegation was verified. It is important that the facility provide as much information as possible, to the best of its knowledge at the time of submission of the report. The facility should include any updates to information provided in the initial report and the following additional information, which should include, but are not limited to the information in this report.`;
+
+    /* ==============================================================
+       INITIAL REPORT STEPS (39-555F) -- 10 official sections
+       ============================================================== */
+
+    const INITIAL_STEPS = [
+      {
+        id: 1, title: "Facility Information",
+        fields: [
+          { id: "facility_name", label: "Facility Name", type: "text" },
+          { id: "ccn", label: "CMS Certification Number (CCN)", type: "text", placeholder: "######" },
+          { id: "address", label: "Address (Street, City, State, ZIP)", type: "text" },
+          { id: "facility_phone", label: "Facility Phone Number", type: "tel" },
+          { id: "facility_email", label: "Facility Email Address", type: "email" },
+        ],
+      },
+      {
+        id: 2, title: "Allegation Type",
+        type: "allegation_type",
+      },
+      {
+        id: 3, title: "When Facility Became Aware",
+        fields: [
+          { id: "staff_aware_date", label: "Date staff first became aware of the incident", type: "date" },
+          { id: "staff_aware_time", label: "Time staff first became aware of the incident", type: "time" },
+          { id: "staff_aware_name", label: "Name of staff member who first became aware", type: "text" },
+          { id: "admin_notified_date", label: "Date administrator was notified", type: "date" },
+          { id: "admin_notified_time", label: "Time administrator was notified", type: "time" },
+          { id: "admin_notifier", label: "By whom was the administrator notified \u2014 name and position", type: "text" },
+        ],
+      },
+      {
+        id: 4, title: "Alleged Victim(s)",
+        type: "multi_entry", dataKey: "victims", entryLabel: "Victim", minEntries: 1,
+        instructions: "Please be sure to input the current location of alleged victim at time of filling out this form.",
+        fields: [
+          { id: "name", label: "Full Name", type: "text" },
+          { id: "dob", label: "Date of Birth", type: "date" },
+          { id: "location", label: "Current location of alleged victim", type: "text" },
+        ],
+      },
+      {
+        id: 5, title: "Alleged Perpetrator(s)",
+        type: "multi_entry", dataKey: "perpetrators", entryLabel: "Perpetrator", minEntries: 1,
+        instructions: "If not a staff member, please insert as much accurate information as possible.",
+        fields: [
+          { id: "name", label: "Full Name", type: "text" },
+          { id: "position", label: "Position if staff", type: "text", placeholder: "N/A if not staff" },
+          { id: "contact", label: "Contact information if known", type: "text" },
+          { id: "relationship", label: "Relationship to the alleged victim", type: "text" },
+        ],
+      },
+      {
+        id: 6, title: "Allegation Details",
+        fields: [
+          { id: "who_alleged", label: "Who made the allegation (unless anonymously), and their relationship to the alleged victim", type: "text", placeholder: "Enter 'Anonymous' if reported anonymously" },
+          { id: "what_reported", label: "What was reported and to whom or which agency/entity", type: "textarea" },
+          { id: "incident_date", label: "Date when the alleged incident occurred", type: "date" },
+          { id: "incident_time", label: "Time when the alleged incident occurred", type: "time" },
+          { id: "incident_location", label: "Where the alleged incident occurred", type: "text" },
+          { id: "serious_injury", label: "Whether serious bodily injury occurred, if known", type: "radio", options: ["Yes", "No", "Unknown"] },
+          { id: "serious_injury_explain", label: "If yes or unknown, explain", type: "textarea", showWhen: { field: "serious_injury", values: ["Yes", "Unknown"] } },
+          { id: "injury_description", label: "Describe any type of injury (bruise, scratch, laceration, puncture wound, fracture, bleeding, redness on the skin, etc.)", type: "textarea" },
+          { id: "behavioral_changes", label: "Describe any changes in the resident\u2019s behavior (crying, fear, cowering, anger, withdrawal, difficulty sleeping, etc.)", type: "textarea" },
+          { id: "protective_steps", label: "All steps taken immediately to ensure resident(s) are protected", type: "textarea", rows: 8,
+            helperText: "Address each of the following as applicable:\n\u2022 Immediate assessment of alleged victim; medical treatment provided\n\u2022 Whether victim feels safe; room relocation or increased supervision taken\n\u2022 Notification to physician and resident representative (if injury, significant change, or altered treatment)\n\u2022 If perpetrator is staff: removal of access to victim and other residents\n\u2022 If perpetrator is resident/visitor: removal of access to victim\n\u2022 Other preventive measures" },
+        ],
+      },
+      { id: 7, title: "Witness(es)", type: "witness_entry" },
+      {
+        id: 8, title: "Notification to Law Enforcement, if applicable",
+        fields: [
+          { id: "law_enforcement", label: "Was the incident reported to a law enforcement agency?", type: "radio", options: ["Yes", "No"] },
+          { id: "le_agency", label: "Name of the law enforcement agency notified and contact person", type: "text", showWhen: { field: "law_enforcement", values: ["Yes"] } },
+          { id: "le_reporter", label: "Name of reporting individual(s) and position(s)", type: "text", showWhen: { field: "law_enforcement", values: ["Yes"] } },
+          { id: "le_date", label: "Date the report was made", type: "date", showWhen: { field: "law_enforcement", values: ["Yes"] } },
+          { id: "le_time", label: "Time the report was made", type: "time", showWhen: { field: "law_enforcement", values: ["Yes"] } },
+          { id: "le_report_number", label: "Report number, if available", type: "text", showWhen: { field: "law_enforcement", values: ["Yes"] } },
+        ],
+      },
+      {
+        id: 9, title: "Notification to Other Agencies",
+        fields: [
+          { id: "other_agency", label: "Were other agencies notified (e.g., nurse aide registry, professional licensing board)?", type: "radio", options: ["Yes", "No"] },
+          { id: "oa_name", label: "Which other agency and who", type: "text", showWhen: { field: "other_agency", values: ["Yes"] } },
+          { id: "oa_date", label: "Date the report was made", type: "date", showWhen: { field: "other_agency", values: ["Yes"] } },
+          { id: "oa_time", label: "Time the report was made", type: "time", showWhen: { field: "other_agency", values: ["Yes"] } },
+          { id: "oa_outcome", label: "Outcome", type: "textarea", showWhen: { field: "other_agency", values: ["Yes"] } },
+        ],
+      },
+      {
+        id: 10, title: "Submission Report",
+        fields: [
+          { id: "submitter_name", label: "Name and title of person submitting report", type: "text" },
+          { id: "submission_date", label: "Date of submission", type: "date", defaultToday: true },
+          { id: "submission_time", label: "Time of submission", type: "time", defaultNow: true },
+          { id: "submitter_phone", label: "Contact phone number", type: "tel" },
+          { id: "submitter_email", label: "Contact email address", type: "email" },
+        ],
+      },
+    ];
+
+    /* ==============================================================
+       FOLLOW-UP REPORT STEPS (39-556F) -- 6 official sections
+       ============================================================== */
+
+    const FOLLOWUP_STEPS = [
+      {
+        id: 1, title: "Additional/Updated Information",
+        fields: [
+          { id: "additional_info", label: "Brief description of any additional information and/or updates, if applicable", type: "textarea" },
+          { id: "additional_outcomes", label: "Describe any additional outcomes to the resident(s) \u2014 physical and mental harm", type: "textarea" },
+          { id: "reported_to_rep", label: "Was the allegation reported to the resident representative?", type: "radio", options: ["Yes", "No"] },
+          { id: "reported_to_rep_date", label: "Date reported to resident representative", type: "date", showWhen: { field: "reported_to_rep", values: ["Yes"] } },
+          { id: "reported_to_rep_time", label: "Time reported to resident representative", type: "time", showWhen: { field: "reported_to_rep", values: ["Yes"] } },
+          { id: "reported_to_other_agency", label: "Was the allegation reported to another agency?", type: "radio", options: ["Yes", "No"] },
+          { id: "roa_agency", label: "Which agency", type: "text", showWhen: { field: "reported_to_other_agency", values: ["Yes"] } },
+          { id: "roa_date", label: "Date reported", type: "date", showWhen: { field: "reported_to_other_agency", values: ["Yes"] } },
+          { id: "roa_time", label: "Time reported", type: "time", showWhen: { field: "reported_to_other_agency", values: ["Yes"] } },
+          { id: "roa_outcome", label: "Outcome", type: "textarea", showWhen: { field: "reported_to_other_agency", values: ["Yes"] } },
+        ],
+      },
+      {
+        id: 2, title: "Steps Taken to Investigate",
+        fields: [
+          { id: "investigation_steps", label: "Provide a detailed summary of ALL steps taken to investigate", type: "textarea", rows: 8 },
+          { id: "interview_victim", label: "Interview with alleged victim and/or victim\u2019s responsible party", type: "textarea", rows: 6 },
+          { id: "interview_witnesses", label: "Interview with witness(es)", type: "textarea", rows: 6 },
+          { id: "interview_perpetrator", label: "Interview with alleged perpetrator(s)", type: "textarea", rows: 6 },
+          { id: "interview_other_residents", label: "Interview with other residents who may have had contact with alleged perpetrator", type: "textarea", rows: 6 },
+          { id: "interview_location_staff", label: "Interview with staff responsible for oversight/supervision of victim\u2019s location", type: "textarea", rows: 6 },
+          { id: "interview_perp_supervisor", label: "Interview with staff responsible for oversight/supervision of alleged perpetrator", type: "textarea", rows: 6 },
+          { id: "clinical_records", label: "Summary of relevant clinical record information", type: "textarea", rows: 6 },
+          { id: "other_documents", label: "Summary of other documents obtained within the 5-business-day timeframe", type: "textarea", rows: 6 },
+        ],
+      },
+      { id: 3, title: "Conclusion", type: "conclusion_step" },
+      { id: 4, title: "Corrective Actions", type: "corrective_actions_step" },
+      {
+        id: 5, title: "Facility Investigator",
+        fields: [
+          { id: "investigator_name", label: "Name of person(s) investigating allegation", type: "text" },
+        ],
+      },
+      {
+        id: 6, title: "Submitted By",
+        fields: [
+          { id: "fu_submitter_name", label: "Name of administrator/designee", type: "text" },
+          { id: "fu_submission_date", label: "Date of submission", type: "date", defaultToday: true },
+          { id: "fu_submission_time", label: "Time of submission", type: "time", defaultNow: true },
+          { id: "fu_submitter_phone", label: "Contact number for follow-up", type: "tel" },
+          { id: "fu_submitter_email", label: "Contact email for follow-up", type: "email" },
+        ],
+      },
+    ];
+
+    /* ==============================================================
+       UTILITY FUNCTIONS
+       ============================================================== */
+
+    function todayStr() { return new Date().toISOString().slice(0, 10); }
+
+    function nowTimeStr() {
+      const d = new Date();
+      return d.getHours().toString().padStart(2, "0") + ":" + d.getMinutes().toString().padStart(2, "0");
+    }
+
+    function formatDateDisplay(iso) {
+      if (!iso) return "";
+      const [y, m, d] = iso.split("-");
+      return m + "/" + d + "/" + y;
+    }
+
+    function formatTimeDisplay(t) {
+      if (!t) return "";
+      const parts = t.split(":");
+      let h = parseInt(parts[0], 10);
+      const suffix = h >= 12 ? "PM" : "AM";
+      if (h === 0) h = 12; else if (h > 12) h -= 12;
+      return h + ":" + parts[1] + " " + suffix;
+    }
+
+    function formatPhone(val) {
+      const d = val.replace(/\D/g, "");
+      if (d.length >= 10) return "(" + d.slice(0,3) + ") " + d.slice(3,6) + "-" + d.slice(6,10);
+      return val;
+    }
+
+    function getInitialFormData(formType) {
+      const base = {
+        facility_name: FACILITY_DEFAULTS.facility_name,
+        ccn: FACILITY_DEFAULTS.ccn,
+        address: FACILITY_DEFAULTS.address,
+        facility_phone: FACILITY_DEFAULTS.facility_phone,
+        facility_email: "",
+      };
+      if (formType === "initial") {
+        return { ...base,
+          allegation_types: [], allegation_details: {},
+          staff_aware_date: "", staff_aware_time: "",
+          staff_aware_name: "",
+          admin_notified_date: "", admin_notified_time: "",
+          admin_notifier: "",
+          victims: [{ name: "", dob: "", location: "" }],
+          perpetrators: [{ name: "", position: "", contact: "", relationship: "" }],
+          who_alleged: "", what_reported: "",
+          incident_date: "", incident_time: "",
+          incident_location: "",
+          serious_injury: "", serious_injury_explain: "",
+          injury_description: "", behavioral_changes: "",
+          protective_steps: "",
+          no_witnesses: false, witnesses: [],
+          law_enforcement: "", le_agency: "", le_reporter: "",
+          le_date: "", le_time: "", le_report_number: "",
+          other_agency: "", oa_name: "", oa_date: "", oa_time: "", oa_outcome: "",
+          submitter_name: "",
+          submission_date: todayStr(), submission_time: nowTimeStr(),
+          submitter_phone: "", submitter_email: "",
+        };
+      }
+      return { ...base,
+        additional_info: "", additional_outcomes: "",
+        reported_to_rep: "", reported_to_rep_date: "", reported_to_rep_time: "",
+        reported_to_other_agency: "", roa_agency: "", roa_date: "", roa_time: "", roa_outcome: "",
+        investigation_steps: "",
+        interview_victim: "", interview_witnesses: "", interview_perpetrator: "",
+        interview_other_residents: "", interview_location_staff: "", interview_perp_supervisor: "",
+        clinical_records: "", other_documents: "",
+        conclusion_finding: "", conclusion_verified: "", conclusion_not_verified: "", conclusion_inconclusive: "",
+        injury_abuse_neglect: "",
+        corrective_actions: "", corrective_oversight: "",
+        corrective_counseling: "", corrective_systemic: "", corrective_le_status: "",
+        investigator_name: "Michael Kuritsky",
+        fu_submitter_name: "",
+        fu_submission_date: todayStr(), fu_submission_time: nowTimeStr(),
+        fu_submitter_phone: "", fu_submitter_email: "",
+      };
+    }
+
+    function downloadBlob(blob, filename) {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = filename;
+      document.body.appendChild(a); a.click();
+      document.body.removeChild(a); URL.revokeObjectURL(url);
+    }
+
+    /* ==============================================================
+       SELF-REPORT LINK COMPONENT
+       ============================================================== */
+
+    function SelfReportLink() {
+      return (
+        <div className="mt-6 pt-4 border-t border-gray-200 text-center">
+          <a href="https://app.smartsheet.com/b/form/d41b00fe14014f2d9e3395dd5e59c900"
+             target="_blank" rel="noopener noreferrer"
+             className="text-sm text-mdh-light hover:text-mdh-blue underline">
+            Click here to submit a Self Report
+          </a>
+        </div>
+      );
+    }
+
+    /* ==============================================================
+       FIELD COMPONENTS
+       ============================================================== */
+
+    function FieldWrapper({ label, error, helperText, children }) {
+      return (
+        <div className="mb-5">
+          <label className="block text-sm font-semibold text-gray-700 mb-1">
+            {applyTooltips(label)}
+          </label>
+          {helperText && (
+            <div className="text-sm text-gray-500 mb-2 whitespace-pre-line bg-gray-50 border border-gray-200 rounded p-3">
+              {helperText}
+            </div>
+          )}
+          {children}
+          {error && <p className="mt-1 text-sm text-red-600 font-medium">{error}</p>}
+        </div>
+      );
+    }
+
+    function TextFieldComp({ id, value, onChange, type, placeholder, error, label, helperText }) {
+      return (
+        <FieldWrapper label={label} error={error} helperText={helperText}>
+          <input type={type || "text"} value={value || ""} onChange={e => onChange(id, e.target.value)}
+            placeholder={placeholder} className={"field-input" + (error ? " error" : "")} />
+        </FieldWrapper>
+      );
+    }
+
+    function TextAreaComp({ id, value, onChange, placeholder, error, label, helperText, rows }) {
+      const len = (value || "").length;
+      return (
+        <FieldWrapper label={label} error={error} helperText={helperText}>
+          <textarea value={value || ""} rows={rows || 6} onChange={e => onChange(id, e.target.value)}
+            placeholder={placeholder} className={"field-input" + (error ? " error" : "")}
+            style={{ minHeight: ((rows || 6) * 1.5) + "rem" }} />
+          <p className="text-xs text-gray-400 mt-1 text-right">{len} characters</p>
+        </FieldWrapper>
+      );
+    }
+
+    function DateComp({ id, value, onChange, error, label, helperText }) {
+      return (
+        <FieldWrapper label={label} error={error} helperText={helperText}>
+          <input type="date" value={value || ""} onChange={e => onChange(id, e.target.value)}
+            className={"field-input max-w-xs" + (error ? " error" : "")} />
+        </FieldWrapper>
+      );
+    }
+
+    function TimeComp({ id, value, onChange, error, label, helperText }) {
+      return (
+        <FieldWrapper label={label} error={error} helperText={helperText}>
+          <input type="time" value={value || ""} onChange={e => onChange(id, e.target.value)}
+            className={"field-input max-w-xs" + (error ? " error" : "")} style={{ maxWidth: "200px" }} />
+        </FieldWrapper>
+      );
+    }
+
+    function PhoneComp({ id, value, onChange, error, label, helperText }) {
+      return (
+        <FieldWrapper label={label} error={error} helperText={helperText}>
+          <input type="tel" value={value || ""} onChange={e => onChange(id, formatPhone(e.target.value))}
+            placeholder="(###) ###-####" className={"field-input max-w-xs" + (error ? " error" : "")} />
+        </FieldWrapper>
+      );
+    }
+
+    function EmailComp({ id, value, onChange, error, label, helperText }) {
+      return (
+        <FieldWrapper label={label} error={error} helperText={helperText}>
+          <input type="email" value={value || ""} onChange={e => onChange(id, e.target.value)}
+            placeholder="email@example.com" className={"field-input max-w-md" + (error ? " error" : "")} />
+        </FieldWrapper>
+      );
+    }
+
+    function RadioComp({ id, value, onChange, options, error, label, helperText }) {
+      return (
+        <FieldWrapper label={label} error={error} helperText={helperText}>
+          <div className="flex flex-wrap gap-3 mt-1">
+            {options.map(opt => (
+              <button key={opt} type="button" onClick={() => onChange(id, opt)}
+                className={"px-6 py-3 rounded-lg border-2 text-base font-semibold transition-colors cursor-pointer " +
+                  (value === opt ? "bg-mdh-blue text-white border-mdh-blue" : "bg-white text-gray-700 border-gray-300 hover:border-mdh-light hover:bg-mdh-accent")}>
+                {opt}
+              </button>
+            ))}
+          </div>
+        </FieldWrapper>
+      );
+    }
+
+    /* ==============================================================
+       GENERIC FIELD RENDERER
+       ============================================================== */
+
+    function renderField(field, formData, updateField, errors) {
+      if (field.showWhen) {
+        const depVal = formData[field.showWhen.field];
+        if (!field.showWhen.values.includes(depVal)) return null;
+      }
+      const p = { id: field.id, value: formData[field.id], onChange: updateField, error: errors[field.id],
+        label: field.label, helperText: field.helperText, placeholder: field.placeholder };
+      switch (field.type) {
+        case "text": return <TextFieldComp key={field.id} {...p} />;
+        case "textarea": return <TextAreaComp key={field.id} {...p} rows={field.rows} />;
+        case "date": return <DateComp key={field.id} {...p} />;
+        case "time": return <TimeComp key={field.id} {...p} />;
+        case "tel": return <PhoneComp key={field.id} {...p} />;
+        case "email": return <EmailComp key={field.id} {...p} />;
+        case "radio": return <RadioComp key={field.id} {...p} options={field.options} />;
+        default: return <TextFieldComp key={field.id} {...p} />;
+      }
+    }
+
+    /* ==============================================================
+       ALLEGATION TYPE STEP
+       ============================================================== */
+
+    function AllegationTypeStep({ formData, updateField, errors }) {
+      const selected = formData.allegation_types || [];
+      const details = formData.allegation_details || {};
+      const toggle = (optId) => {
+        const next = selected.includes(optId) ? selected.filter(x => x !== optId) : [...selected, optId];
+        updateField("allegation_types", next);
+      };
+      return (
+        <div>
+          <p className="text-sm text-gray-600 mb-4 bg-blue-50 border border-blue-200 rounded p-3">
+            Select all categories that apply to the reporting incident. For each selected type, you may provide additional details.
+          </p>
+          {errors.allegation_types && <p className="text-sm text-red-600 font-medium mb-3">{errors.allegation_types}</p>}
+          <div className="space-y-2">
+            {ALLEGATION_OPTIONS.map(opt => {
+              const on = selected.includes(opt.id);
+              return (
+                <div key={opt.id}>
+                  <button type="button" onClick={() => toggle(opt.id)}
+                    className={"w-full text-left px-4 py-3 rounded-lg border-2 flex items-center gap-3 transition-colors cursor-pointer " +
+                      (on ? "bg-mdh-accent border-mdh-blue" : "bg-white border-gray-200 hover:border-gray-400")}>
+                    <div className={"w-6 h-6 rounded border-2 flex items-center justify-center flex-shrink-0 " +
+                      (on ? "bg-mdh-blue border-mdh-blue" : "border-gray-400")}>
+                      {on && <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
+                    </div>
+                    <span className="text-base font-medium">{applyTooltips(opt.label)}</span>
+                  </button>
+                  {on && (
+                    <div className="ml-9 mt-2 mb-3">
+                      <textarea value={details[opt.id] || ""} onChange={e => updateField("allegation_details", { ...details, [opt.id]: e.target.value })}
+                        placeholder={"Additional details for " + opt.label + " (optional)"} rows={3} className="field-input resize-y text-sm" />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      );
+    }
+
+    /* ==============================================================
+       MULTI-ENTRY STEP
+       ============================================================== */
+
+    function MultiEntryStep({ step, formData, updateField, errors }) {
+      const entries = formData[step.dataKey] || [];
+      const addEntry = () => {
+        const blank = {}; step.fields.forEach(f => { blank[f.id] = ""; });
+        updateField(step.dataKey, [...entries, blank]);
+      };
+      const removeEntry = idx => {
+        if (entries.length <= (step.minEntries || 0)) return;
+        updateField(step.dataKey, entries.filter((_, i) => i !== idx));
+      };
+      const updateEntry = (idx, fid, val) => {
+        const next = entries.map((e, i) => i === idx ? { ...e, [fid]: val } : e);
+        updateField(step.dataKey, next);
+      };
+      return (
+        <div>
+          {step.instructions && <p className="text-sm text-gray-600 mb-4 bg-blue-50 border border-blue-200 rounded p-3">{step.instructions}</p>}
+          {entries.map((entry, idx) => (
+            <div key={idx} className="border border-gray-200 rounded-lg p-5 mb-4 bg-white shadow-sm">
+              <div className="flex justify-between items-center mb-4">
+                <h4 className="text-base font-semibold text-mdh-blue">{step.entryLabel} #{idx + 1}</h4>
+                {entries.length > (step.minEntries || 0) && (
+                  <button type="button" onClick={() => removeEntry(idx)}
+                    className="px-4 py-2 text-sm font-semibold text-red-700 bg-red-50 border border-red-300 rounded-md hover:bg-red-100 cursor-pointer">
+                    Remove
+                  </button>
+                )}
+              </div>
+              {step.fields.map(field => {
+                const errKey = step.dataKey + "[" + idx + "]." + field.id;
+                if (field.type === "date") {
+                  return <DateComp key={field.id} id={field.id} label={field.label}
+                    value={entry[field.id]} onChange={(fid, val) => updateEntry(idx, fid, val)} error={errors[errKey]} />;
+                }
+                return <TextFieldComp key={field.id} id={field.id} label={field.label}
+                  value={entry[field.id]} placeholder={field.placeholder}
+                  onChange={(fid, val) => updateEntry(idx, fid, val)} error={errors[errKey]} />;
+              })}
+            </div>
+          ))}
+          <button type="button" onClick={addEntry}
+            className="inline-flex items-center px-6 py-3 text-sm font-semibold text-mdh-blue bg-white border-2 border-mdh-blue rounded-lg hover:bg-mdh-accent cursor-pointer">
+            + Add Another {step.entryLabel}
+          </button>
+        </div>
+      );
+    }
+
+    /* ==============================================================
+       WITNESS ENTRY STEP
+       ============================================================== */
+
+    function WitnessEntryStep({ formData, updateField, errors }) {
+      const noW = formData.no_witnesses || false;
+      const ws = formData.witnesses || [];
+      const wFields = [
+        { id: "name", label: "Full Name" },
+        { id: "position", label: "Position, if staff" },
+        { id: "relationship", label: "Relationship to alleged victim" },
+        { id: "contact", label: "Contact information, if known" },
+      ];
+      const addW = () => updateField("witnesses", [...ws, { name: "", position: "", relationship: "", contact: "" }]);
+      const removeW = idx => updateField("witnesses", ws.filter((_, i) => i !== idx));
+      const updateW = (idx, fid, val) => {
+        const next = ws.map((e, i) => i === idx ? { ...e, [fid]: val } : e);
+        updateField("witnesses", next);
+      };
+      return (
+        <div>
+          <a href="witness-statement.html" target="_blank" rel="noopener noreferrer"
+            className="flex items-center gap-3 w-full px-4 py-3 mb-4 rounded-lg border-2 border-mdh-light bg-blue-50 hover:bg-mdh-accent transition-colors text-mdh-blue font-semibold text-base cursor-pointer"
+            style={{textDecoration:"none"}}>
+            <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+            Open Witness / Staff / Patient Statement Form
+            <svg className="w-4 h-4 ml-auto flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+          </a>
+          <button type="button" onClick={() => { updateField("no_witnesses", !noW); if (!noW) updateField("witnesses", []); }}
+            className={"w-full text-left px-4 py-3 rounded-lg border-2 flex items-center gap-3 mb-4 transition-colors cursor-pointer " +
+              (noW ? "bg-mdh-accent border-mdh-blue" : "bg-white border-gray-200 hover:border-gray-400")}>
+            <div className={"w-6 h-6 rounded border-2 flex items-center justify-center flex-shrink-0 " +
+              (noW ? "bg-mdh-blue border-mdh-blue" : "border-gray-400")}>
+              {noW && <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
+            </div>
+            <span className="text-base font-medium">No witnesses to report</span>
+          </button>
+          {!noW && (
+            <>
+              {ws.map((w, idx) => (
+                <div key={idx} className="border border-gray-200 rounded-lg p-5 mb-4 bg-white shadow-sm">
+                  <div className="flex justify-between items-center mb-4">
+                    <h4 className="text-base font-semibold text-mdh-blue">Witness #{idx + 1}</h4>
+                    <button type="button" onClick={() => removeW(idx)}
+                      className="px-4 py-2 text-sm font-semibold text-red-700 bg-red-50 border border-red-300 rounded-md hover:bg-red-100 cursor-pointer">Remove</button>
+                  </div>
+                  {wFields.map(f => (
+                    <TextFieldComp key={f.id} id={f.id} label={f.label}
+                      value={w[f.id]} onChange={(fid, val) => updateW(idx, fid, val)}
+                      error={errors["witnesses[" + idx + "]." + f.id]} />
+                  ))}
+                </div>
+              ))}
+              <button type="button" onClick={addW}
+                className="inline-flex items-center px-6 py-3 text-sm font-semibold text-mdh-blue bg-white border-2 border-mdh-blue rounded-lg hover:bg-mdh-accent cursor-pointer">
+                + Add Witness
+              </button>
+              {ws.length === 0 && errors.witnesses && <p className="text-sm text-red-600 font-medium mt-2">{errors.witnesses}</p>}
+            </>
+          )}
+        </div>
+      );
+    }
+
+    /* ==============================================================
+       CONCLUSION STEP (Follow-Up)
+       ============================================================== */
+
+    function ConclusionStep({ formData, updateField, errors }) {
+      const f = formData.conclusion_finding;
+      return (
+        <div>
+          <RadioComp id="conclusion_finding" label="Investigation finding"
+            value={f} onChange={updateField} options={["Verified", "Not Verified", "Inconclusive"]} error={errors.conclusion_finding} />
+          {f === "Verified" && <TextAreaComp id="conclusion_verified" label="Describe the evidence that verified the allegation"
+            value={formData.conclusion_verified} onChange={updateField} rows={6} error={errors.conclusion_verified} />}
+          {f === "Not Verified" && <TextAreaComp id="conclusion_not_verified" label="Describe why the allegation could not be verified"
+            value={formData.conclusion_not_verified} onChange={updateField} rows={6} error={errors.conclusion_not_verified} />}
+          {f === "Inconclusive" && <TextAreaComp id="conclusion_inconclusive" label="Describe how this determination was reached \u2014 insufficient information"
+            value={formData.conclusion_inconclusive} onChange={updateField} rows={6} error={errors.conclusion_inconclusive} />}
+          <TextAreaComp id="injury_abuse_neglect"
+            label="For injuries of unknown source: Did the investigation determine whether the injury resulted from abuse or neglect?"
+            value={formData.injury_abuse_neglect} onChange={updateField} rows={4} error={errors.injury_abuse_neglect}
+            helperText='Complete this field if "Injury of Unknown Source" was an allegation type. Otherwise, enter N/A.' />
+        </div>
+      );
+    }
+
+    /* ==============================================================
+       CORRECTIVE ACTIONS STEP (Follow-Up)
+       ============================================================== */
+
+    function CorrectiveActionsStep({ formData, updateField, errors }) {
+      const isV = formData.conclusion_finding === "Verified";
+      return (
+        <div>
+          <TextAreaComp id="corrective_actions" label="Describe any action(s) taken as a result of the investigation"
+            value={formData.corrective_actions} onChange={updateField} rows={6} error={errors.corrective_actions} />
+          <TextAreaComp id="corrective_oversight" label="Describe the plan for oversight of implementation"
+            value={formData.corrective_oversight} onChange={updateField} rows={6} error={errors.corrective_oversight} />
+          {isV && <TextAreaComp id="corrective_counseling" label="Counseling or interventions planned/implemented to assist the resident"
+            value={formData.corrective_counseling} onChange={updateField} rows={6} error={errors.corrective_counseling}
+            helperText="Required when verified abuse (physical, sexual, or mental) was found." />}
+          <TextAreaComp id="corrective_systemic" label="Systemic corrections (staffing patterns, policies, training)"
+            value={formData.corrective_systemic} onChange={updateField} rows={6} error={errors.corrective_systemic} />
+          <TextAreaComp id="corrective_le_status" label="Law enforcement/agency status"
+            value={formData.corrective_le_status} onChange={updateField} rows={4} error={errors.corrective_le_status} />
+        </div>
+      );
+    }
+
+    /* ==============================================================
+       STEP VALIDATION (no mandatory fields)
+       ============================================================== */
+
+    function validateStep(stepDef, formData) {
+      return {};
+    }
+
+    /* ==============================================================
+       PROGRESS BAR
+       ============================================================== */
+
+    function ProgressBar({ currentStep, totalSteps, steps }) {
+      const pct = ((currentStep + 1) / totalSteps) * 100;
+      return (
+        <div className="mb-6">
+          <div className="flex justify-between items-center mb-2">
+            <span className="text-sm font-semibold text-mdh-blue">Step {currentStep + 1} of {totalSteps}</span>
+            <span className="text-sm text-gray-500">{steps[currentStep]?.title}</span>
+          </div>
+          <div className="w-full bg-gray-200 rounded-full h-3">
+            <div className="bg-mdh-blue h-3 rounded-full transition-all duration-300" style={{ width: pct + "%" }} />
+          </div>
+          <div className="flex mt-2 gap-1 overflow-x-auto pb-1">
+            {steps.map((s, i) => (
+              <div key={i} className={"text-xs px-2 py-1 rounded-full whitespace-nowrap " +
+                (i < currentStep ? "bg-green-100 text-green-700" : i === currentStep ? "bg-mdh-blue text-white" : "bg-gray-100 text-gray-500")}>
+                {s.title}
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    /* ==============================================================
+       REVIEW / SUMMARY STEP
+       ============================================================== */
+
+    function ReviewStep({ formData, steps, formType, onEdit }) {
+      const [collapsed, setCollapsed] = useState({});
+      const toggle = idx => setCollapsed(p => ({ ...p, [idx]: !p[idx] }));
+
+      const renderValue = val => {
+        if (val === undefined || val === null || val === "") return <span className="text-gray-400 italic">Not provided</span>;
+        if (typeof val === "boolean") return val ? "Yes" : "No";
+        if (Array.isArray(val)) {
+          if (val.length === 0) return <span className="text-gray-400 italic">None</span>;
+          return val.map((v, i) => {
+            const optLabel = ALLEGATION_OPTIONS.find(o => o.id === v)?.label || v;
+            return <span key={i} className="inline-block bg-mdh-accent text-mdh-blue text-sm px-2 py-1 rounded mr-1 mb-1">{optLabel}</span>;
+          });
+        }
+        return String(val);
+      };
+
+      const renderRow = (label, value) => (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-2 py-2 border-b border-gray-100">
+          <div className="font-medium text-gray-700 text-sm">{label}</div>
+          <div className="md:col-span-2 text-sm whitespace-pre-wrap">{renderValue(value)}</div>
+        </div>
+      );
+
+      const renderStepReview = (step, idx) => {
+        if (step.type === "allegation_type") {
+          return (
+            <div>
+              {renderRow("Selected allegation types", formData.allegation_types)}
+              {(formData.allegation_types || []).map(t => {
+                const detail = formData.allegation_details?.[t];
+                if (!detail) return null;
+                return renderRow("Details \u2014 " + (ALLEGATION_OPTIONS.find(o => o.id === t)?.label || t), detail);
+              })}
+            </div>
+          );
+        }
+        if (step.type === "multi_entry") {
+          return (formData[step.dataKey] || []).map((entry, ei) => (
+            <div key={ei} className="mb-2">
+              <p className="text-sm font-semibold text-mdh-blue mb-1">{step.entryLabel} #{ei + 1}</p>
+              {step.fields.map(f => renderRow(f.label, f.type === "date" ? formatDateDisplay(entry[f.id]) : entry[f.id]))}
+            </div>
+          ));
+        }
+        if (step.type === "witness_entry") {
+          if (formData.no_witnesses) return renderRow("Witnesses", "No witnesses to report");
+          const ws = formData.witnesses || [];
+          if (ws.length === 0) return renderRow("Witnesses", "None entered");
+          return ws.map((w, i) => (
+            <div key={i} className="mb-2">
+              <p className="text-sm font-semibold text-mdh-blue mb-1">Witness #{i + 1}</p>
+              {renderRow("Full Name", w.name)}{renderRow("Position", w.position)}
+              {renderRow("Relationship", w.relationship)}{renderRow("Contact", w.contact)}
+            </div>
+          ));
+        }
+        if (step.type === "conclusion_step") {
+          return (
+            <div>
+              {renderRow("Finding", formData.conclusion_finding)}
+              {formData.conclusion_finding === "Verified" && renderRow("Evidence", formData.conclusion_verified)}
+              {formData.conclusion_finding === "Not Verified" && renderRow("Reason", formData.conclusion_not_verified)}
+              {formData.conclusion_finding === "Inconclusive" && renderRow("Explanation", formData.conclusion_inconclusive)}
+              {renderRow("Injury from abuse/neglect", formData.injury_abuse_neglect)}
+            </div>
+          );
+        }
+        if (step.type === "corrective_actions_step") {
+          return (
+            <div>
+              {renderRow("Actions taken", formData.corrective_actions)}
+              {renderRow("Oversight plan", formData.corrective_oversight)}
+              {formData.conclusion_finding === "Verified" && renderRow("Counseling/interventions", formData.corrective_counseling)}
+              {renderRow("Systemic corrections", formData.corrective_systemic)}
+              {renderRow("LE/agency status", formData.corrective_le_status)}
+            </div>
+          );
+        }
+        return (step.fields || []).map(f => {
+          if (f.showWhen && !f.showWhen.values.includes(formData[f.showWhen.field])) return null;
+          let dv = formData[f.id];
+          if (f.type === "date") dv = formatDateDisplay(dv);
+          if (f.type === "time") dv = formatTimeDisplay(dv);
+          return renderRow(f.label, dv);
+        });
+      };
+
+      return (
+        <div>
+          <h2 className="text-xl font-bold text-mdh-blue mb-4">Review Your Submission</h2>
+          <p className="text-sm text-gray-600 mb-6">Review all information below. Click "Edit" on any section to make changes.</p>
+          {steps.map((step, idx) => {
+            const isOpen = !collapsed[idx];
+            return (
+              <div key={idx} className="border border-gray-200 rounded-lg mb-3 overflow-hidden">
+                <button type="button" onClick={() => toggle(idx)}
+                  className="w-full flex justify-between items-center px-5 py-3 bg-gray-50 hover:bg-gray-100 transition-colors cursor-pointer">
+                  <span className="font-semibold text-mdh-blue">Section {step.id}: {step.title}</span>
+                  <div className="flex items-center gap-3">
+                    <span onClick={e => { e.stopPropagation(); onEdit(idx); }}
+                      className="text-sm text-mdh-light hover:text-mdh-blue font-semibold underline cursor-pointer">Edit</span>
+                    <svg className={"w-5 h-5 text-gray-500 transition-transform " + (isOpen ? "rotate-180" : "")}
+                      fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </div>
+                </button>
+                {isOpen && <div className="px-5 py-3">{renderStepReview(step, idx)}</div>}
+              </div>
+            );
+          })}
+        </div>
+      );
+    }
+
+    /* ==============================================================
+       DOCX EXPORT -- EXACT OFFICIAL FORM REPRODUCTION
+       ============================================================== */
+
+    function buildInitialReportDocx(formData) {
+      const lib = window.docxLib;
+      const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell,
+              AlignmentType, BorderStyle, WidthType, ShadingType, convertInchesToTwip } = lib;
+
+      const COL_W = 4778; // each column in dxa (3.32 inches)
+      const TABLE_W = 9556; // total table width in dxa
+
+      const allBorders = {
+        top: { style: BorderStyle.SINGLE, size: 1 },
+        bottom: { style: BorderStyle.SINGLE, size: 1 },
+        left: { style: BorderStyle.SINGLE, size: 1 },
+        right: { style: BorderStyle.SINGLE, size: 1 },
+      };
+
+      // Helper: create a merged (full-width) cell row
+      function mergedRow(paragraphs, shading) {
+        const cellOpts = {
+          columnSpan: 2,
+          borders: allBorders,
+          children: Array.isArray(paragraphs) ? paragraphs : [paragraphs],
+        };
+        if (shading) cellOpts.shading = { fill: shading, type: ShadingType.CLEAR };
+        return new TableRow({ children: [new TableCell(cellOpts)] });
+      }
+
+      // Helper: section header row (FFC000 amber)
+      function sectionHeader(text) {
+        return mergedRow(
+          new Paragraph({ children: [new TextRun({ text, bold: true, size: 28, font: "Times New Roman" })] }),
+          "FFC000"
+        );
+      }
+
+      // Helper: sub-header / instruction row (F2F2F2 light gray)
+      function subHeader(text) {
+        return mergedRow(
+          new Paragraph({ children: [new TextRun({ text, bold: true, size: 24, font: "Times New Roman" })] }),
+          "F2F2F2"
+        );
+      }
+
+      // Helper: data row (white, merged)
+      function dataRow(label, value) {
+        return mergedRow(
+          new Paragraph({
+            children: [
+              new TextRun({ text: label + ": ", bold: true, size: 24, font: "Times New Roman" }),
+              new TextRun({ text: value || "", size: 24, font: "Times New Roman" }),
+            ],
+          })
+        );
+      }
+
+      // Helper: data row with long text (label on one line, value on next)
+      function dataRowLong(label, value) {
+        return mergedRow([
+          new Paragraph({ children: [new TextRun({ text: label, bold: true, size: 24, font: "Times New Roman" })] }),
+          new Paragraph({ children: [new TextRun({ text: value || "", size: 24, font: "Times New Roman" })], spacing: { before: 60 } }),
+        ]);
+      }
+
+      // Helper: split row (two cells)
+      function splitRow(label1, value1, label2, value2) {
+        return new TableRow({
+          children: [
+            new TableCell({
+              borders: allBorders,
+              children: [new Paragraph({
+                children: [
+                  new TextRun({ text: label1 + ": ", bold: true, size: 24, font: "Times New Roman" }),
+                  new TextRun({ text: value1 || "", size: 24, font: "Times New Roman" }),
+                ],
+              })],
+            }),
+            new TableCell({
+              borders: allBorders,
+              children: [new Paragraph({
+                children: [
+                  new TextRun({ text: label2 + ": ", bold: true, size: 24, font: "Times New Roman" }),
+                  new TextRun({ text: value2 || "", size: 24, font: "Times New Roman" }),
+                ],
+              })],
+            }),
+          ],
+        });
+      }
+
+      // Build the title paragraphs
+      const titleParagraphs = [
+        new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: "Maryland Department of Health", bold: true, size: 28, font: "Times New Roman" })] }),
+        new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: "Office of Health Care Quality", bold: true, size: 28, font: "Times New Roman" })] }),
+        new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: "Facility Reported Incidents Initial Report Form", bold: true, size: 28, font: "Times New Roman" })] }),
+        new Paragraph({ children: [] }), // empty paragraph
+      ];
+
+      // Build all table rows
+      const rows = [];
+
+      // Row 0: Instructions header
+      rows.push(sectionHeader("Instructions for Facility Reported Incidents Initial Report"));
+
+      // Row 1: Submitting sub-header
+      rows.push(subHeader("Submitting a Facility Report Incident Initial Report"));
+
+      // Row 2: Full instruction text
+      const instructionParagraphs = INITIAL_INSTRUCTION_TEXT.split("\n").map(line =>
+        new Paragraph({ children: [new TextRun({ text: line, size: 24, font: "Times New Roman" })], spacing: { after: 60 } })
+      );
+      rows.push(mergedRow(instructionParagraphs));
+
+      // Row 3: Initial Report header
+      rows.push(sectionHeader("Initial Report"));
+
+      // Row 4: Important note sub-header
+      rows.push(subHeader("It is important that the facility provide as much information as possible, to the best of its knowledge at the time of submission of this report."));
+
+      // Row 5: Section 1 header
+      rows.push(sectionHeader("1. Facility Information"));
+
+      // Row 6: Facility Name
+      rows.push(dataRow("Facility Name", formData.facility_name));
+
+      // Row 7: CCN
+      rows.push(dataRow("CMS Certification Number (CCN)", formData.ccn));
+
+      // Row 8: Address
+      rows.push(dataRow("Address", formData.address));
+
+      // Row 9: Phone | Email (split)
+      rows.push(splitRow("Facility Phone Number", formData.facility_phone, "Facility Email Address", formData.facility_email));
+
+      // Row 10: Section 2 header
+      rows.push(sectionHeader("2. Allegation Type"));
+
+      // Row 11: Selected types with checkmarks
+      const selectedTypes = (formData.allegation_types || []).map(id => {
+        const opt = ALLEGATION_OPTIONS.find(o => o.id === id);
+        return opt ? opt.label : id;
+      });
+      const allTypesText = ALLEGATION_OPTIONS.map(opt => {
+        const checked = (formData.allegation_types || []).includes(opt.id);
+        return (checked ? "\u2611 " : "\u2610 ") + opt.label;
+      }).join("\n");
+      const typesParagraphs = [
+        new Paragraph({ children: [new TextRun({ text: "Select all that apply:", bold: true, size: 24, font: "Times New Roman" })], spacing: { after: 60 } }),
+      ];
+      ALLEGATION_OPTIONS.forEach(opt => {
+        const checked = (formData.allegation_types || []).includes(opt.id);
+        typesParagraphs.push(new Paragraph({
+          children: [new TextRun({ text: (checked ? "\u2611 " : "\u2610 ") + opt.label, size: 24, font: "Times New Roman" })],
+          spacing: { after: 40 },
+        }));
+      });
+      rows.push(mergedRow(typesParagraphs));
+
+      // Rows 12-16: Allegation details for selected types
+      (formData.allegation_types || []).forEach(tid => {
+        const detail = formData.allegation_details?.[tid];
+        if (detail) {
+          const optLabel = ALLEGATION_OPTIONS.find(o => o.id === tid)?.label || tid;
+          rows.push(dataRowLong("Details \u2014 " + optLabel, detail));
+        }
+      });
+
+      // Row 17: Section 3 header
+      rows.push(sectionHeader("3. Information about when the Facility became aware of the alleged incident"));
+
+      // Row 18: Staff awareness
+      rows.push(dataRow("Date/Time staff first became aware of the incident",
+        formatDateDisplay(formData.staff_aware_date) + " " + formatTimeDisplay(formData.staff_aware_time) +
+        " \u2014 Name: " + (formData.staff_aware_name || "")
+      ));
+
+      // Row 19: Admin notification
+      rows.push(dataRow("Date/Time administrator was notified and by whom",
+        formatDateDisplay(formData.admin_notified_date) + " " + formatTimeDisplay(formData.admin_notified_time) +
+        " \u2014 By: " + (formData.admin_notifier || "")
+      ));
+
+      // Row 20: Section 4 header
+      rows.push(sectionHeader("4. Alleged Victim(s)"));
+
+      // Row 21: Victim instructions
+      rows.push(subHeader("Please be sure to input the current location of alleged victim at time of filling out this form."));
+
+      // Victim entries
+      const victims = formData.victims || [];
+      victims.forEach((v, idx) => {
+        // Row 22-type: Name | DOB (split)
+        rows.push(splitRow("Full Name", v.name, "Date of Birth", formatDateDisplay(v.dob)));
+        // Row 23-type: Location (merged)
+        rows.push(dataRow("Current location of alleged victim", v.location));
+      });
+
+      // Row 24: Section 5 header
+      rows.push(sectionHeader("5. Alleged Perpetrator(s)"));
+
+      // Row 25: Perpetrator instructions
+      rows.push(subHeader("If not a staff member, please insert as much accurate information as possible."));
+
+      // Perpetrator entries
+      const perps = formData.perpetrators || [];
+      perps.forEach((p, idx) => {
+        rows.push(dataRow("Full Name", p.name));
+        rows.push(dataRow("Position (if staff)", p.position));
+        rows.push(dataRow("Contact information, if known", p.contact));
+        rows.push(dataRow("Relationship to the alleged victim", p.relationship));
+      });
+
+      // Row 30: Section 6 header
+      rows.push(sectionHeader("6. Allegation Details"));
+
+      // Row 31: Sub-header
+      rows.push(subHeader("Provide a brief description of the alleged incident. Include the following information:"));
+
+      // Row 32
+      rows.push(dataRow("Who made the allegation (unless anonymously), and their relationship to the alleged victim", formData.who_alleged));
+
+      // Row 33
+      rows.push(dataRowLong("What was reported and to whom or which agency/entity", formData.what_reported));
+
+      // Row 34
+      rows.push(dataRow("Date and time when the alleged incident occurred",
+        formatDateDisplay(formData.incident_date) + " " + formatTimeDisplay(formData.incident_time)
+      ));
+
+      // Row 35
+      rows.push(dataRow("Where the alleged incident occurred", formData.incident_location));
+
+      // Row 36: physical harm sub-header
+      rows.push(subHeader("Provide details of any physical harm and/or changes in the resident\u2019s behavior:"));
+
+      // Row 37
+      rows.push(dataRow("Whether serious bodily injury occurred, if known", formData.serious_injury || ""));
+      if (formData.serious_injury === "Yes" || formData.serious_injury === "Unknown") {
+        rows.push(dataRowLong("Explanation", formData.serious_injury_explain));
+      }
+
+      // Row 38
+      rows.push(dataRowLong("Describe any type of injury (bruise, scratch, laceration, puncture wound, fracture, bleeding, redness on the skin, etc.)", formData.injury_description));
+
+      // Row 39
+      rows.push(dataRowLong("Describe any changes in the resident\u2019s behavior (crying, fear, cowering, anger, withdrawal, difficulty sleeping, etc.)", formData.behavioral_changes));
+
+      // Row 40: Protective steps instructions
+      rows.push(subHeader("All steps taken immediately to ensure resident(s) are protected. Address the following as applicable: immediate assessment and medical treatment; whether victim feels safe and room relocation/supervision taken; notification to physician and resident representative; removal of perpetrator access; other preventive measures."));
+
+      // Row 41
+      rows.push(dataRowLong("All steps taken immediately to ensure resident(s) are protected", formData.protective_steps));
+
+      // Row 42: Section 7 header
+      rows.push(sectionHeader("7. Witness(es)"));
+
+      // Witness entries
+      const witnesses = formData.witnesses || [];
+      if (formData.no_witnesses || witnesses.length === 0) {
+        rows.push(dataRow("Witnesses", formData.no_witnesses ? "No witnesses to report" : "None entered"));
+      } else {
+        witnesses.forEach((w, idx) => {
+          // Row 43-type: Name | Position (split)
+          rows.push(splitRow("Full Name", w.name, "Position (if staff)", w.position));
+          // Row 44-type: Relationship | Contact (split)
+          rows.push(splitRow("Relationship to alleged victim", w.relationship, "Contact information, if known", w.contact));
+        });
+      }
+
+      // Row 45: Section 8 header
+      rows.push(sectionHeader("8. Notification to Law Enforcement, if applicable"));
+
+      // Row 46
+      rows.push(dataRow("Was the incident reported to a law enforcement agency?", formData.law_enforcement || ""));
+
+      if (formData.law_enforcement === "Yes") {
+        // Row 47
+        rows.push(dataRow("Name of the law enforcement agency notified and contact person", formData.le_agency));
+        // Row 48
+        rows.push(dataRow("Name of reporting individual(s) and position(s)", formData.le_reporter));
+        // Row 49
+        rows.push(dataRow("Date and time (including am/pm) the report was made, report number if available",
+          formatDateDisplay(formData.le_date) + " " + formatTimeDisplay(formData.le_time) +
+          (formData.le_report_number ? " \u2014 Report #" + formData.le_report_number : "")
+        ));
+      }
+
+      // Row 50: Section 9 header
+      rows.push(sectionHeader("9. Notification to Other Agencies"));
+
+      // Row 51
+      rows.push(dataRow("Were other agencies notified (e.g., nurse aide registry, professional licensing board)?", formData.other_agency || ""));
+
+      if (formData.other_agency === "Yes") {
+        // Row 52
+        rows.push(dataRow("If YES, which other agency and who", formData.oa_name));
+        // Row 53
+        rows.push(dataRow("Date and Time (include am/pm) the report was made",
+          formatDateDisplay(formData.oa_date) + " " + formatTimeDisplay(formData.oa_time)
+        ));
+        if (formData.oa_outcome) {
+          rows.push(dataRowLong("Outcome", formData.oa_outcome));
+        }
+      }
+
+      // Row 54: Section 10 header
+      rows.push(sectionHeader("10. Submission Report"));
+
+      // Row 55
+      rows.push(dataRow("Name and title of person submitting report", formData.submitter_name));
+
+      // Row 56
+      rows.push(dataRow("Date and time (am/pm) report was submitted",
+        formatDateDisplay(formData.submission_date) + " " + formatTimeDisplay(formData.submission_time)
+      ));
+
+      // Row 57
+      rows.push(dataRow("Contact number and E-mail address",
+        (formData.submitter_phone || "") + " " + (formData.submitter_email || "")
+      ));
+
+      // Build the table
+      const table = new Table({
+        columnWidths: [COL_W, COL_W],
+        rows: rows,
+        width: { size: TABLE_W, type: WidthType.DXA },
+      });
+
+      // Build the document
+      const doc = new Document({
+        sections: [{
+          properties: {
+            page: {
+              size: { width: 12240, height: 15840 },
+              margin: { top: 1440, right: 1440, bottom: 1440, left: 1440 },
+            },
+          },
+          children: [...titleParagraphs, table],
+        }],
+      });
+
+      return doc;
+    }
+
+    function buildFollowUpReportDocx(formData) {
+      const lib = window.docxLib;
+      const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell,
+              AlignmentType, BorderStyle, WidthType, ShadingType, convertInchesToTwip } = lib;
+
+      const TABLE_W = 9556;
+
+      const allBorders = {
+        top: { style: BorderStyle.SINGLE, size: 1 },
+        bottom: { style: BorderStyle.SINGLE, size: 1 },
+        left: { style: BorderStyle.SINGLE, size: 1 },
+        right: { style: BorderStyle.SINGLE, size: 1 },
+      };
+
+      // Helper: single-column row (no merge needed since single column)
+      function singleRow(paragraphs, shading) {
+        const cellOpts = {
+          borders: allBorders,
+          children: Array.isArray(paragraphs) ? paragraphs : [paragraphs],
+        };
+        if (shading) cellOpts.shading = { fill: shading, type: ShadingType.CLEAR };
+        return new TableRow({ children: [new TableCell(cellOpts)] });
+      }
+
+      function sectionHeader(text) {
+        return singleRow(
+          new Paragraph({ children: [new TextRun({ text, bold: true, size: 28, font: "Times New Roman" })] }),
+          "FFC000"
+        );
+      }
+
+      function subHeader(text) {
+        return singleRow(
+          new Paragraph({ children: [new TextRun({ text, bold: true, size: 24, font: "Times New Roman" })] }),
+          "F2F2F2"
+        );
+      }
+
+      function dataRow(label, value) {
+        return singleRow(
+          new Paragraph({
+            children: [
+              new TextRun({ text: label + ": ", bold: true, size: 24, font: "Times New Roman" }),
+              new TextRun({ text: value || "", size: 24, font: "Times New Roman" }),
+            ],
+          })
+        );
+      }
+
+      function dataRowLong(label, value) {
+        return singleRow([
+          new Paragraph({ children: [new TextRun({ text: label, bold: true, size: 24, font: "Times New Roman" })] }),
+          new Paragraph({ children: [new TextRun({ text: value || "", size: 24, font: "Times New Roman" })], spacing: { before: 60 } }),
+        ]);
+      }
+
+      const titleParagraphs = [
+        new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: "Maryland Department of Health", bold: true, size: 28, font: "Times New Roman" })] }),
+        new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: "Office of Health Care Quality", bold: true, size: 28, font: "Times New Roman" })] }),
+        new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: "Facility Reported Incident Follow-Up Investigation Report Form", bold: true, size: 28, font: "Times New Roman" })] }),
+        new Paragraph({ children: [] }),
+      ];
+
+      const rows = [];
+
+      // Row 0: Instructions header
+      rows.push(sectionHeader("Instructions for Facility Reported Incident Follow-Up Investigation Report"));
+
+      // Row 1: Submitting sub-header
+      rows.push(subHeader("Submitting a Facility Reported Incident Follow-Up Investigation Report"));
+
+      // Row 2: Instruction text
+      const instructionParagraphs = FOLLOWUP_INSTRUCTION_TEXT.split("\n").map(line =>
+        new Paragraph({ children: [new TextRun({ text: line, size: 24, font: "Times New Roman" })], spacing: { after: 60 } })
+      );
+      rows.push(singleRow(instructionParagraphs));
+
+      // Row 3: Section 1 header
+      rows.push(sectionHeader("1. Additional/Updated Information"));
+
+      // Row 4: Instructions
+      rows.push(subHeader("Please include any updates to information provided in the initial report."));
+
+      // Row 5: Additional outcomes
+      rows.push(dataRowLong("Describe any additional outcomes to the resident(s) \u2014 physical and mental harm", formData.additional_outcomes));
+
+      // Additional info
+      if (formData.additional_info) {
+        rows.push(dataRowLong("Brief description of any additional information and/or updates", formData.additional_info));
+      }
+
+      // Row 6: Reported to representative
+      rows.push(dataRow("Whether the allegation was reported to the resident representative",
+        formData.reported_to_rep === "Yes"
+          ? "Yes \u2014 " + formatDateDisplay(formData.reported_to_rep_date) + " " + formatTimeDisplay(formData.reported_to_rep_time)
+          : (formData.reported_to_rep || "")
+      ));
+
+      // Row 7: Reported to another agency
+      let agencyText = formData.reported_to_other_agency || "";
+      if (formData.reported_to_other_agency === "Yes") {
+        agencyText = "Yes \u2014 " + (formData.roa_agency || "") + ", " +
+          formatDateDisplay(formData.roa_date) + " " + formatTimeDisplay(formData.roa_time);
+        if (formData.roa_outcome) agencyText += " \u2014 Outcome: " + formData.roa_outcome;
+      }
+      rows.push(dataRow("Whether the allegation was reported to another agency", agencyText));
+
+      // Row 8: Section 2 header
+      rows.push(sectionHeader("2. Steps Taken to Investigate the Alleged Incident"));
+
+      // Row 9: Instructions
+      rows.push(subHeader("Provide a detailed summary of ALL steps taken to investigate the allegation. Include interviews with each of the following:"));
+
+      // Row 10: Investigation summary
+      rows.push(dataRowLong("Detailed summary of all investigation steps", formData.investigation_steps));
+
+      // Row 11: Interview - victim
+      rows.push(dataRowLong("Interview with alleged victim and/or victim\u2019s responsible party", formData.interview_victim));
+
+      // Row 12: Interview - witnesses
+      rows.push(dataRowLong("Interview with witness(es)", formData.interview_witnesses));
+
+      // Row 13: Interview - perpetrator
+      rows.push(dataRowLong("Interview with alleged perpetrator(s)", formData.interview_perpetrator));
+
+      // Row 14: Interview - other residents
+      rows.push(dataRowLong("Interview with other residents who may have had contact with alleged perpetrator", formData.interview_other_residents));
+
+      // Row 15: Interview - location staff
+      rows.push(dataRowLong("Interview with staff responsible for oversight/supervision of victim\u2019s location", formData.interview_location_staff));
+
+      // Row 16: Interview - perpetrator supervisor
+      rows.push(dataRowLong("Interview with staff responsible for oversight/supervision of alleged perpetrator", formData.interview_perp_supervisor));
+
+      // Row 17: Clinical records + other documents
+      rows.push(dataRowLong("Summary of relevant clinical record information", formData.clinical_records));
+      rows.push(dataRowLong("Summary of other documents obtained within the 5-business-day timeframe", formData.other_documents));
+
+      // Row 18: Section 3 header
+      rows.push(sectionHeader("3. Conclusion"));
+
+      // Row 19: Instructions
+      rows.push(subHeader("Indicate the finding/conclusion of the investigation."));
+
+      // Row 20: Verified
+      if (formData.conclusion_finding === "Verified") {
+        rows.push(dataRow("Finding", "Verified"));
+        rows.push(dataRowLong("Evidence that verified the allegation", formData.conclusion_verified));
+      }
+
+      // Row 21: Not Verified
+      if (formData.conclusion_finding === "Not Verified") {
+        rows.push(dataRow("Finding", "Not Verified"));
+        rows.push(dataRowLong("Why the allegation could not be verified", formData.conclusion_not_verified));
+      }
+
+      // Row 22: Inconclusive
+      if (formData.conclusion_finding === "Inconclusive") {
+        rows.push(dataRow("Finding", "Inconclusive"));
+        rows.push(dataRowLong("How this determination was reached", formData.conclusion_inconclusive));
+      }
+
+      if (!formData.conclusion_finding) {
+        rows.push(dataRow("Finding", ""));
+      }
+
+      // Injury of unknown source
+      rows.push(dataRowLong("For injuries of unknown source: Did the investigation determine whether the injury resulted from abuse or neglect?", formData.injury_abuse_neglect));
+
+      // Row 23: Section 4 header
+      rows.push(sectionHeader("4. Corrective Action(s) Taken"));
+
+      // Row 24: Instructions
+      rows.push(subHeader("Describe any corrective actions taken as a result of the investigation."));
+
+      // Row 25
+      rows.push(dataRowLong("Describe any action(s) taken as a result of the investigation", formData.corrective_actions));
+
+      // Row 26
+      rows.push(dataRowLong("Describe the plan for oversight of implementation", formData.corrective_oversight));
+
+      // Row 27: Counseling (conditional)
+      if (formData.conclusion_finding === "Verified") {
+        rows.push(dataRowLong("Counseling or interventions planned/implemented to assist the resident", formData.corrective_counseling));
+      }
+
+      // Row 28
+      rows.push(dataRowLong("Systemic corrections (staffing patterns, policies, training)", formData.corrective_systemic));
+
+      // Row 29
+      rows.push(dataRowLong("Law enforcement/agency status", formData.corrective_le_status));
+
+      // Row 30: Section 5 header
+      rows.push(sectionHeader("5. Facility Investigator"));
+
+      // Row 31: Instructions
+      rows.push(subHeader("Identify the person(s) who conducted the investigation."));
+
+      // Row 32
+      rows.push(dataRow("Name of person(s) investigating allegation", formData.investigator_name));
+
+      // Row 33: Section 6 header
+      rows.push(sectionHeader("6. Submitted By"));
+
+      // Row 34
+      rows.push(dataRow("Name of administrator/designee", formData.fu_submitter_name));
+
+      // Row 35
+      rows.push(dataRow("Date and time of submission",
+        formatDateDisplay(formData.fu_submission_date) + " " + formatTimeDisplay(formData.fu_submission_time)
+      ));
+
+      // Row 36
+      rows.push(dataRow("Contact number and E-mail address",
+        (formData.fu_submitter_phone || "") + " " + (formData.fu_submitter_email || "")
+      ));
+
+      const table = new Table({
+        columnWidths: [TABLE_W],
+        rows: rows,
+        width: { size: TABLE_W, type: WidthType.DXA },
+      });
+
+      const doc = new Document({
+        sections: [{
+          properties: {
+            page: {
+              size: { width: 12240, height: 15840 },
+              margin: { top: 1440, right: 1440, bottom: 1440, left: 1440 },
+            },
+          },
+          children: [...titleParagraphs, table],
+        }],
+      });
+
+      return doc;
+    }
+
+    async function exportToDocx(formData, formType) {
+      const lib = window.docxLib;
+      if (!lib) { alert("Word export library is still loading. Please wait a moment and try again."); return; }
+      const { Packer } = lib;
+
+      const isInit = formType === "initial";
+      const doc = isInit ? buildInitialReportDocx(formData) : buildFollowUpReportDocx(formData);
+      const blob = await Packer.toBlob(doc);
+      const ds = new Date().toISOString().slice(0, 10);
+      downloadBlob(blob, (isInit ? "FRI_Initial_Report_" : "FRI_FollowUp_Report_") + ds + ".docx");
+    }
+
+    /* ==============================================================
+       FORM WIZARD
+       ============================================================== */
+
+    function FormWizard({ formType, onReset }) {
+      const isInit = formType === "initial";
+      const formNum = isInit ? "39-555F" : "39-556F";
+      const steps = isInit ? INITIAL_STEPS : FOLLOWUP_STEPS;
+      const total = steps.length;
+
+      const [cur, setCur] = useState(0);
+      const [formData, setFormData] = useState(() => getInitialFormData(formType));
+      const [errors, setErrors] = useState({});
+      const [showReview, setShowReview] = useState(false);
+
+      useEffect(() => {
+        const handler = e => { e.preventDefault(); e.returnValue = ""; };
+        window.addEventListener("beforeunload", handler);
+        return () => window.removeEventListener("beforeunload", handler);
+      }, []);
+
+      const updateField = useCallback((id, value) => {
+        setFormData(p => ({ ...p, [id]: value }));
+        setErrors(p => { const n = { ...p }; delete n[id]; return n; });
+      }, []);
+
+      const handleNext = () => {
+        const errs = validateStep(steps[cur], formData);
+        if (Object.keys(errs).length > 0) { setErrors(errs); window.scrollTo({ top: 0, behavior: "smooth" }); return; }
+        setErrors({});
+        if (cur >= total - 1) setShowReview(true); else setCur(s => s + 1);
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      };
+
+      const handleBack = () => {
+        if (showReview) setShowReview(false); else if (cur > 0) setCur(s => s - 1);
+        setErrors({}); window.scrollTo({ top: 0, behavior: "smooth" });
+      };
+
+      const editFromReview = idx => { setShowReview(false); setCur(idx); window.scrollTo({ top: 0, behavior: "smooth" }); };
+
+      const renderStep = () => {
+        const step = steps[cur];
+        if (step.type === "allegation_type") return <AllegationTypeStep formData={formData} updateField={updateField} errors={errors} />;
+        if (step.type === "multi_entry") return <MultiEntryStep step={step} formData={formData} updateField={updateField} errors={errors} />;
+        if (step.type === "witness_entry") return <WitnessEntryStep formData={formData} updateField={updateField} errors={errors} />;
+        if (step.type === "conclusion_step") return <ConclusionStep formData={formData} updateField={updateField} errors={errors} />;
+        if (step.type === "corrective_actions_step") return <CorrectiveActionsStep formData={formData} updateField={updateField} errors={errors} />;
+        return (
+          <div>
+            {step.instructions && <p className="text-sm text-gray-600 mb-4 bg-blue-50 border border-blue-200 rounded p-3">{step.instructions}</p>}
+            {step.fields.map(f => renderField(f, formData, updateField, errors))}
+          </div>
+        );
+      };
+
+      return (
+        <div className="min-h-screen bg-gray-50">
+          <header className="bg-mdh-blue text-white shadow-md">
+            <div className="max-w-4xl mx-auto px-4 py-4">
+              <p className="text-sm font-medium opacity-90">Maryland Department of Health</p>
+              <p className="text-lg font-bold">Office of Health Care Quality</p>
+              <p className="text-sm opacity-80 mt-1">{isInit ? "FRI Initial Report" : "FRI Follow-Up Investigation Report"} &mdash; Form {formNum}</p>
+            </div>
+          </header>
+          <main className="max-w-4xl mx-auto px-4 py-6">
+            {showReview ? (
+              <>
+                <ReviewStep formData={formData} steps={steps} formType={formType} onEdit={editFromReview} />
+                <div className="mt-8 flex flex-col sm:flex-row gap-4">
+                  <button type="button" onClick={handleBack}
+                    className="inline-flex items-center justify-center px-8 py-3 text-base font-semibold text-mdh-blue bg-white border-2 border-mdh-blue rounded-lg hover:bg-mdh-accent cursor-pointer">
+                    &larr; Back to Last Step
+                  </button>
+                  <button type="button" onClick={() => exportToDocx(formData, formType)}
+                    className="inline-flex items-center justify-center px-8 py-3 text-base font-semibold text-white bg-mdh-blue rounded-lg hover:bg-mdh-light cursor-pointer">
+                    Export to Word Document
+                  </button>
+                </div>
+                <div className="mt-6 pt-6 border-t border-gray-200">
+                  <button type="button" onClick={onReset} className="text-sm text-gray-500 hover:text-red-600 underline cursor-pointer">
+                    Start Over (new form)
+                  </button>
+                </div>
+                <SelfReportLink />
+              </>
+            ) : (
+              <>
+                <ProgressBar currentStep={cur} totalSteps={total} steps={steps} />
+                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 md:p-8">
+                  <h2 className="text-xl font-bold text-mdh-blue mb-1">Section {steps[cur].id}: {steps[cur].title}</h2>
+                  <hr className="border-gray-200 mb-6" />
+                  {renderStep()}
+                </div>
+                <div className="flex justify-between items-center mt-6">
+                  <button type="button" onClick={handleBack} disabled={cur === 0}
+                    className={"inline-flex items-center justify-center px-8 py-3 text-base font-semibold text-mdh-blue bg-white border-2 border-mdh-blue rounded-lg hover:bg-mdh-accent cursor-pointer" + (cur === 0 ? " opacity-50 cursor-not-allowed" : "")}>
+                    &larr; Back
+                  </button>
+                  <button type="button" onClick={handleNext}
+                    className="inline-flex items-center justify-center px-8 py-3 text-base font-semibold text-white bg-mdh-blue rounded-lg hover:bg-mdh-light cursor-pointer">
+                    {cur >= total - 1 ? "Review & Finish" : "Next \u2192"}
+                  </button>
+                </div>
+                <SelfReportLink />
+              </>
+            )}
+          </main>
+        </div>
+      );
+    }
+
+    /* ==============================================================
+       APP ENTRY POINT
+       ============================================================== */
+
+    function App() {
+      const [formType, setFormType] = useState(null);
+
+      if (!formType) {
+        return (
+          <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
+            <div className="max-w-2xl w-full">
+              <div className="text-center mb-10">
+                <h1 className="text-2xl font-bold text-mdh-blue mb-1">Maryland Department of Health</h1>
+                <h2 className="text-lg font-semibold text-gray-700">Office of Health Care Quality</h2>
+                <p className="text-gray-500 mt-2">Facility Reported Incident &mdash; Form Wizard</p>
+              </div>
+              <div className="grid gap-6 md:grid-cols-2">
+                <button type="button" onClick={() => setFormType("initial")}
+                  className="bg-white rounded-xl border-2 border-gray-200 p-6 text-left hover:border-mdh-blue hover:shadow-lg transition-all cursor-pointer group">
+                  <div className="text-xs font-semibold text-mdh-light mb-2">FORM 39-555F</div>
+                  <h3 className="text-lg font-bold text-gray-900 mb-2">FRI Initial Report</h3>
+                  <p className="text-sm text-gray-600 mb-4">File within <strong>2 hours</strong> for serious bodily injury/abuse, or <strong>24 hours</strong> otherwise.</p>
+                  <div className="text-mdh-blue font-semibold text-sm group-hover:underline">Start &rarr;</div>
+                </button>
+                <button type="button" onClick={() => setFormType("followup")}
+                  className="bg-white rounded-xl border-2 border-gray-200 p-6 text-left hover:border-mdh-blue hover:shadow-lg transition-all cursor-pointer group">
+                  <div className="text-xs font-semibold text-mdh-light mb-2">FORM 39-556F</div>
+                  <h3 className="text-lg font-bold text-gray-900 mb-2">FRI Follow-Up Investigation</h3>
+                  <p className="text-sm text-gray-600 mb-4">File within <strong>5 business days</strong> of the incident.</p>
+                  <div className="text-mdh-blue font-semibold text-sm group-hover:underline">Start &rarr;</div>
+                </button>
+              </div>
+              <p className="text-xs text-gray-400 text-center mt-8">Coffman Nursing Home &amp; Rehabilitation Center &mdash; Compliance Tool</p>
+              <SelfReportLink />
+            </div>
+          </div>
+        );
+      }
+
+      return <FormWizard formType={formType} onReset={() => setFormType(null)} />;
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+  </script>
+</body>
+</html>

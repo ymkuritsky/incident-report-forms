@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Witness / Staff / Patient Statement — Coffman Nursing Home</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script type="module">
+    import { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell,
+             HeadingLevel, AlignmentType, BorderStyle, WidthType, ShadingType,
+             Header, Footer } from "https://esm.sh/docx@9.1.1?bundle-deps";
+    window.docxLib = { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell,
+                       HeadingLevel, AlignmentType, BorderStyle, WidthType, ShadingType,
+                       Header, Footer };
+  </script>
+  <script>
+    tailwind.config = {
+      theme: { extend: { colors: { 'mdh-blue': '#1a5276', 'mdh-light': '#2980b9', 'mdh-accent': '#d4e6f1' } } },
+    };
+  </script>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; }
+    .field-input {
+      width: 100%; border: 1px solid #d1d5db; border-radius: 0.375rem;
+      padding: 0.75rem 1rem; font-size: 1rem; min-height: 44px;
+      transition: border-color 0.15s, box-shadow 0.15s; outline: none;
+    }
+    .field-input:focus { border-color: #2980b9; box-shadow: 0 0 0 2px rgba(41,128,185,0.25); }
+    textarea.field-input { resize: vertical; }
+    @media print {
+      .no-print { display: none !important; }
+      body { background: white; }
+    }
+  </style>
+</head>
+<body class="bg-gray-50 text-gray-900">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useCallback } = React;
+
+    function todayStr() { return new Date().toISOString().slice(0, 10); }
+    function nowTimeStr() {
+      const d = new Date();
+      return d.getHours().toString().padStart(2,"0") + ":" + d.getMinutes().toString().padStart(2,"0");
+    }
+    function formatDateDisplay(iso) {
+      if (!iso) return "";
+      const [y, m, d] = iso.split("-");
+      return m + "/" + d + "/" + y;
+    }
+    function formatTimeDisplay(t) {
+      if (!t) return "";
+      const parts = t.split(":");
+      let h = parseInt(parts[0], 10);
+      const suffix = h >= 12 ? "PM" : "AM";
+      if (h === 0) h = 12; else if (h > 12) h -= 12;
+      return h + ":" + parts[1] + " " + suffix;
+    }
+    function downloadBlob(blob, filename) {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = filename;
+      document.body.appendChild(a); a.click();
+      document.body.removeChild(a); URL.revokeObjectURL(url);
+    }
+
+    function Field({ label, children }) {
+      return (
+        <div className="mb-4">
+          <label className="block text-sm font-semibold text-gray-700 mb-1">{label}</label>
+          {children}
+        </div>
+      );
+    }
+
+    async function exportToDocx(data) {
+      const lib = window.docxLib;
+      if (!lib) { alert("Word export library is still loading. Please wait a moment and try again."); return; }
+      const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell,
+              HeadingLevel, AlignmentType, BorderStyle, WidthType, ShadingType, Header, Footer } = lib;
+
+      const thinBorder = { top: { style: BorderStyle.SINGLE, size: 1 }, bottom: { style: BorderStyle.SINGLE, size: 1 },
+        left: { style: BorderStyle.SINGLE, size: 1 }, right: { style: BorderStyle.SINGLE, size: 1 } };
+
+      const mkRow = (label, value) => new TableRow({ children: [
+        new TableCell({ width: { size: 40, type: WidthType.PERCENTAGE }, borders: thinBorder,
+          shading: { fill: "f0f4f8", type: ShadingType.CLEAR },
+          children: [new Paragraph({ children: [new TextRun({ text: label, bold: true, size: 20, font: "Calibri" })] })] }),
+        new TableCell({ width: { size: 60, type: WidthType.PERCENTAGE }, borders: thinBorder,
+          children: [new Paragraph({ children: [new TextRun({ text: value || "", size: 20, font: "Calibri" })] })] }),
+      ]});
+
+      const doc = new Document({ sections: [{ children: [
+        new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 100 },
+          children: [new TextRun({ text: "INFORMATION OF STAFF / OR PATIENT", bold: true, size: 28, font: "Calibri" })] }),
+        new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 200 },
+          children: [new TextRun({ text: "Coffman Nursing Home & Rehabilitation Center", size: 22, font: "Calibri" })] }),
+
+        new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows: [
+          mkRow("Name and Title of person being interviewed", data.interviewee_name),
+          mkRow("Center", "Coffman Nursing Home"),
+          mkRow("Unit/Dept", data.unit_dept),
+          mkRow("Name of Staff / or Patient (if applicable)", data.staff_patient_name),
+          mkRow("Name and Title of person conducting interview", data.interviewer_name),
+          mkRow("Date and Time of Alleged Incident", (data.incident_date ? formatDateDisplay(data.incident_date) : "") + " " + (data.incident_time ? formatTimeDisplay(data.incident_time) : "")),
+          mkRow("Date and Time of Interview", (data.interview_date ? formatDateDisplay(data.interview_date) : "") + " " + (data.interview_time ? formatTimeDisplay(data.interview_time) : "")),
+          mkRow("Interview Type", data.interview_type),
+        ]}),
+
+        new Paragraph({ spacing: { before: 400, after: 100 },
+          children: [new TextRun({ text: "STATEMENT OF STAFF / OR PATIENT", bold: true, size: 24, font: "Calibri" })] }),
+        new Paragraph({ spacing: { after: 200 },
+          children: [new TextRun({ text: data.statement || "", size: 20, font: "Calibri" })] }),
+
+        new Paragraph({ spacing: { before: 300, after: 100 },
+          children: [new TextRun({ text: "My signature below indicates that I have read and understood the statement, and that it is true, accurate and complete.", size: 18, font: "Calibri", italics: true })] }),
+
+        new Paragraph({ spacing: { before: 200, after: 50 },
+          children: [new TextRun({ text: "WITNESS COMMENT (if any):", bold: true, size: 20, font: "Calibri" })] }),
+        new Paragraph({ spacing: { after: 200 },
+          children: [new TextRun({ text: data.witness_comment || "", size: 20, font: "Calibri" })] }),
+
+        new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows: [
+          mkRow("Signature of Witness", ""),
+          mkRow("Date", data.witness_date ? formatDateDisplay(data.witness_date) : ""),
+          mkRow("Name of Person being interviewed", data.interviewee_name),
+          mkRow("Date", data.interviewee_sign_date ? formatDateDisplay(data.interviewee_sign_date) : ""),
+          mkRow("Name of Interviewer", data.interviewer_name),
+          mkRow("Date", data.interviewer_sign_date ? formatDateDisplay(data.interviewer_sign_date) : ""),
+        ]}),
+      ]}]});
+
+      const blob = await Packer.toBlob(doc);
+      const ds = new Date().toISOString().slice(0, 10);
+      downloadBlob(blob, "Witness_Statement_Coffman_" + ds + ".docx");
+    }
+
+    function App() {
+      const [data, setData] = useState({
+        interviewee_name: "", unit_dept: "", staff_patient_name: "",
+        interviewer_name: "", incident_date: "", incident_time: "",
+        interview_date: todayStr(), interview_time: nowTimeStr(),
+        interview_type: "In person",
+        statement: "", witness_comment: "",
+        witness_date: todayStr(), interviewee_sign_date: todayStr(), interviewer_sign_date: todayStr(),
+      });
+
+      const update = useCallback((id, val) => setData(p => ({ ...p, [id]: val })), []);
+
+      return (
+        <div className="min-h-screen bg-gray-50">
+          <header className="bg-mdh-blue text-white shadow-md no-print">
+            <div className="max-w-3xl mx-auto px-4 py-4">
+              <p className="text-sm font-medium opacity-90">Coffman Nursing Home & Rehabilitation Center</p>
+              <p className="text-lg font-bold">Witness / Staff / Patient Statement Form</p>
+            </div>
+          </header>
+
+          <main className="max-w-3xl mx-auto px-4 py-6">
+            <div className="mb-4 no-print">
+              <a href="index.html" className="text-sm text-mdh-light hover:text-mdh-blue underline">&larr; Back to FRI Forms</a>
+            </div>
+
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 md:p-8">
+              <h2 className="text-xl font-bold text-mdh-blue mb-1">Information of Staff / or Patient</h2>
+              <hr className="border-gray-200 mb-6" />
+
+              <Field label="Name and Title of person being interviewed">
+                <input type="text" value={data.interviewee_name} onChange={e => update("interviewee_name", e.target.value)} className="field-input" />
+              </Field>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <Field label="Center">
+                  <input type="text" value="Coffman Nursing Home" disabled className="field-input bg-gray-50 text-gray-600" />
+                </Field>
+                <Field label="Unit / Dept">
+                  <input type="text" value={data.unit_dept} onChange={e => update("unit_dept", e.target.value)} className="field-input" />
+                </Field>
+              </div>
+
+              <Field label="Name of Staff / or Patient (if applicable)">
+                <input type="text" value={data.staff_patient_name} onChange={e => update("staff_patient_name", e.target.value)} className="field-input" />
+              </Field>
+
+              <Field label="Name and Title of person conducting interview">
+                <input type="text" value={data.interviewer_name} onChange={e => update("interviewer_name", e.target.value)} className="field-input" />
+              </Field>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <Field label="Date of Alleged Incident">
+                  <input type="date" value={data.incident_date} onChange={e => update("incident_date", e.target.value)} className="field-input" />
+                </Field>
+                <Field label="Time of Alleged Incident">
+                  <input type="time" value={data.incident_time} onChange={e => update("incident_time", e.target.value)} className="field-input" />
+                </Field>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <Field label="Date of Interview">
+                  <input type="date" value={data.interview_date} onChange={e => update("interview_date", e.target.value)} className="field-input" />
+                </Field>
+                <Field label="Time of Interview">
+                  <input type="time" value={data.interview_time} onChange={e => update("interview_time", e.target.value)} className="field-input" />
+                </Field>
+              </div>
+
+              <Field label="Interview Type">
+                <div className="flex gap-3 mt-1">
+                  {["In person", "Via Phone"].map(opt => (
+                    <button key={opt} type="button" onClick={() => update("interview_type", opt)}
+                      className={"px-6 py-3 rounded-lg border-2 text-base font-semibold transition-colors cursor-pointer " +
+                        (data.interview_type === opt ? "bg-mdh-blue text-white border-mdh-blue" : "bg-white text-gray-700 border-gray-300 hover:border-mdh-light hover:bg-mdh-accent")}>
+                      {opt}
+                    </button>
+                  ))}
+                </div>
+              </Field>
+            </div>
+
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 md:p-8 mt-6">
+              <h2 className="text-xl font-bold text-mdh-blue mb-1">Statement of Staff / or Patient</h2>
+              <hr className="border-gray-200 mb-6" />
+
+              <Field label="Written Statement">
+                <textarea value={data.statement} onChange={e => update("statement", e.target.value)}
+                  rows={10} className="field-input"
+                  placeholder="Write the full statement here..." />
+                <p className="text-xs text-gray-400 mt-1 text-right">{data.statement.length} characters</p>
+              </Field>
+
+              <div className="bg-gray-50 border border-gray-200 rounded p-3 text-sm text-gray-600 italic mb-4">
+                My signature below indicates that I have read and understood the statement, and that it is true, accurate and complete.
+              </div>
+
+              <Field label="Witness Comment (if any)">
+                <textarea value={data.witness_comment} onChange={e => update("witness_comment", e.target.value)}
+                  rows={4} className="field-input"
+                  placeholder="Any additional comments from a witness..." />
+              </Field>
+            </div>
+
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 md:p-8 mt-6">
+              <h2 className="text-xl font-bold text-mdh-blue mb-1">Signatures</h2>
+              <hr className="border-gray-200 mb-6" />
+              <p className="text-sm text-gray-500 mb-4">Physical signatures will be collected on the printed document. Dates below are for record keeping.</p>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <Field label="Witness Signature Date">
+                  <input type="date" value={data.witness_date} onChange={e => update("witness_date", e.target.value)} className="field-input" />
+                </Field>
+                <Field label="Interviewee Signature Date">
+                  <input type="date" value={data.interviewee_sign_date} onChange={e => update("interviewee_sign_date", e.target.value)} className="field-input" />
+                </Field>
+              </div>
+              <Field label="Interviewer Signature Date">
+                <input type="date" value={data.interviewer_sign_date} onChange={e => update("interviewer_sign_date", e.target.value)} className="field-input" />
+              </Field>
+            </div>
+
+            <div className="mt-8 flex flex-col sm:flex-row gap-4 no-print">
+              <button type="button" onClick={() => exportToDocx(data)}
+                className="inline-flex items-center justify-center px-8 py-3 text-base font-semibold text-white bg-mdh-blue rounded-lg hover:bg-mdh-light cursor-pointer">
+                Export to Word Document
+              </button>
+              <button type="button" onClick={() => window.print()}
+                className="inline-flex items-center justify-center px-8 py-3 text-base font-semibold text-mdh-blue bg-white border-2 border-mdh-blue rounded-lg hover:bg-mdh-accent cursor-pointer">
+                Print This Form
+              </button>
+            </div>
+
+            <div className="mt-4 no-print">
+              <a href="index.html" className="text-sm text-gray-500 hover:text-mdh-blue underline">&larr; Back to FRI Forms</a>
+            </div>
+          </main>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+  </script>
+</body>
+</html>
