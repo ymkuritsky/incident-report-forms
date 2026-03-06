@@ -1,0 +1,1525 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Investigation Summary Form</title>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script type="module">
+    import { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell,
+             HeadingLevel, AlignmentType, BorderStyle, WidthType, ShadingType,
+             Header, Footer, PageNumber, convertInchesToTwip,
+             SectionType, PageBreak, VerticalAlign } from "https://esm.sh/docx@9.1.1?bundle-deps";
+    window.docxLib = { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell,
+                       HeadingLevel, AlignmentType, BorderStyle, WidthType, ShadingType,
+                       Header, Footer, PageNumber, convertInchesToTwip,
+                       SectionType, PageBreak, VerticalAlign };
+  </script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            'mdh-blue': '#1a5276',
+            'mdh-light': '#2980b9',
+            'mdh-accent': '#d4e6f1'
+          }
+        }
+      }
+    };
+  </script>
+  <style>
+    @media print {
+      .no-print { display: none !important; }
+      .print-only { display: block !important; }
+      .interview-print-page { page-break-before: always; }
+    }
+    @media screen {
+      .print-only { display: none; }
+    }
+    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+  </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useCallback, useRef } = React;
+
+    /* ============================================================
+       QUESTION BANK
+       ============================================================ */
+    const QUESTION_BANK = {
+      "Alleged Abuse": {
+        "Resident (Alleged Victim) Interview": [
+          "Can you tell me what happened?",
+          "Where were you when it happened?",
+          "Do you remember what time of day it was?",
+          "How are you feeling right now?"
+        ],
+        "Staff Witness Interview": [
+          "Walk me through what you saw, from start to finish.",
+          "What exact words or actions did you observe?",
+          "Who else was nearby at the time?",
+          "What did you do immediately after?"
+        ],
+        "Alleged Perpetrator Interview": [
+          "Tell me what happened during your interaction with the resident.",
+          "Where were you and what were you doing at the approximate time?",
+          "Is there anything else you want me to know about this situation?"
+        ],
+        "Family/Representative Interview": [
+          "Has the resident mentioned anything to you about this incident?",
+          "Have you noticed any changes in the resident's mood or behavior recently?",
+          "How has the facility communicated with you about this?"
+        ]
+      },
+      "Neglect": {
+        "Resident (Alleged Victim) Interview": [
+          "Can you tell me what happened?",
+          "When you need help, how long does it usually take for someone to come?",
+          "Is there anything you've been asking for that you haven't received?"
+        ],
+        "Staff Witness Interview": [
+          "Describe what you observed about the resident's condition or situation.",
+          "What was the staffing level on the unit at the time?",
+          "Were you aware of any relevant care plan instructions for this resident?"
+        ],
+        "Alleged Perpetrator Interview": [
+          "Walk me through the care you provided to the resident during your shift.",
+          "Were you aware of the specific care need? What steps did you take?",
+          "Did anything prevent you from providing that care?"
+        ],
+        "Family/Representative Interview": [
+          "What concern brought this to your attention?",
+          "Have you noticed any changes in the resident's physical condition during recent visits?"
+        ]
+      },
+      "Injury of Unknown Origin": {
+        "Resident (Alleged Victim) Interview": [
+          "Can you tell me how you got this injury?",
+          "Do you remember falling or bumping into anything?",
+          "Do you remember anything unusual happening recently?"
+        ],
+        "Staff Witness Interview": [
+          "Did you observe anything during your care of the resident that could have caused this injury?",
+          "Was the resident involved in any incident, transfer, or repositioning during your shift?",
+          "Did the resident say anything to you about pain or discomfort?"
+        ],
+        "Alleged Perpetrator Interview": [],
+        "Family/Representative Interview": [
+          "Have you noticed this injury or any similar marks during your visits?",
+          "Has the resident mentioned anything about how this may have happened?"
+        ]
+      },
+      "Misappropriation of Property": {
+        "Resident (Alleged Victim) Interview": [
+          "Can you tell me what's missing?",
+          "When did you last see or use the item?",
+          "Who has been in your room recently that you're aware of?"
+        ],
+        "Staff Witness Interview": [
+          "Are you aware of the item the resident is reporting missing?",
+          "Were you in the resident's room during your shift? For what purpose?"
+        ],
+        "Alleged Perpetrator Interview": [],
+        "Family/Representative Interview": [
+          "Can you describe the missing item and confirm it was at the facility?",
+          "When did you last see it here?"
+        ]
+      },
+      "Other": {}
+    };
+
+    const EVENT_TYPES = [
+      "Alleged Abuse",
+      "Neglect",
+      "Injury of Unknown Origin",
+      "Misappropriation of Property",
+      "Other"
+    ];
+
+    const INTERVIEW_TYPES = [
+      "Resident (Alleged Victim) Interview",
+      "Staff Witness Interview",
+      "Alleged Perpetrator Interview",
+      "Family/Representative Interview",
+      "Other Interview"
+    ];
+
+    const TIMELINE_ROWS = [
+      "Nursing Supervisor",
+      "Director of Nurses/Designee",
+      "Administrator",
+      "Family",
+      "Social Services",
+      "Quality Assurance Director",
+      "Police",
+      "Medical Provider",
+      "Medical Director",
+      "Human Resources",
+      "LTC Ombudsman"
+    ];
+
+    const SECTION_LABELS = {
+      A: "Report Information",
+      B: "Notifications",
+      C: "Investigation Details",
+      D: "Interviews",
+      E: "Employee Records Review",
+      F: "Investigation Timeline Notification"
+    };
+
+    /* ============================================================
+       TOAST COMPONENT
+       ============================================================ */
+    function Toast({ message, visible, onClose }) {
+      useEffect(() => {
+        if (visible) {
+          const t = setTimeout(onClose, 3000);
+          return () => clearTimeout(t);
+        }
+      }, [visible, onClose]);
+      if (!visible) return null;
+      return (
+        <div className="fixed bottom-6 right-6 bg-green-600 text-white px-6 py-3 rounded-lg shadow-lg z-[9999] text-sm font-medium no-print">
+          {message}
+        </div>
+      );
+    }
+
+    /* ============================================================
+       SECTION TOGGLE BUTTONS
+       ============================================================ */
+    function SectionSelector({ sections, onToggle }) {
+      return (
+        <div className="bg-white rounded-lg shadow p-4 mb-6 no-print">
+          <h2 className="text-sm font-semibold text-gray-600 mb-3 uppercase tracking-wide">Select Sections to Complete</h2>
+          <div className="flex flex-wrap gap-2">
+            {Object.entries(SECTION_LABELS).map(([key, label]) => (
+              <button
+                key={key}
+                onClick={() => onToggle(key)}
+                className={`px-4 py-2 rounded-lg border-2 text-sm font-medium transition-all ${
+                  sections[key]
+                    ? 'bg-mdh-blue text-white border-mdh-blue'
+                    : 'bg-white text-gray-600 border-gray-300 hover:border-mdh-light'
+                }`}
+              >
+                <span className="font-bold mr-1">{key}</span> {label}
+              </button>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    /* ============================================================
+       INPUT HELPERS
+       ============================================================ */
+    function LabelInput({ label, type = "text", value, onChange, required, readOnly, className = "", placeholder = "" }) {
+      return (
+        <div className={className}>
+          <label className="block text-xs font-semibold text-gray-600 mb-1">
+            {label} {required && <span className="text-red-500">*</span>}
+          </label>
+          <input
+            type={type}
+            value={value || ""}
+            onChange={e => onChange(e.target.value)}
+            readOnly={readOnly}
+            required={required}
+            placeholder={placeholder}
+            className={`w-full border rounded px-3 py-2 text-sm ${readOnly ? 'bg-gray-100 text-gray-500' : 'bg-white'} focus:outline-none focus:ring-2 focus:ring-mdh-light`}
+          />
+        </div>
+      );
+    }
+
+    function LabelTextarea({ label, value, onChange, rows = 4, className = "" }) {
+      return (
+        <div className={className}>
+          <label className="block text-xs font-semibold text-gray-600 mb-1">{label}</label>
+          <textarea
+            value={value || ""}
+            onChange={e => onChange(e.target.value)}
+            rows={rows}
+            className="w-full border rounded px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-mdh-light"
+          />
+        </div>
+      );
+    }
+
+    function RadioGroup({ label, value, onChange, options }) {
+      return (
+        <div>
+          <label className="block text-xs font-semibold text-gray-600 mb-1">{label}</label>
+          <div className="flex gap-4">
+            {options.map(opt => (
+              <label key={opt} className="flex items-center gap-1 text-sm cursor-pointer">
+                <input
+                  type="radio"
+                  checked={value === opt}
+                  onChange={() => onChange(opt)}
+                  className="accent-mdh-blue"
+                />
+                {opt}
+              </label>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    /* ============================================================
+       SECTION A — Report Information
+       ============================================================ */
+    function SectionA({ data, setData }) {
+      const u = (field, val) => setData(prev => ({ ...prev, [field]: val }));
+      return (
+        <div className="bg-white rounded-lg shadow p-5 mb-4">
+          <h2 className="text-lg font-bold text-mdh-blue mb-4 border-b pb-2">A. Report Information</h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+            <LabelInput label="Date of Event" type="date" value={data.dateOfEvent} onChange={v => u('dateOfEvent', v)} />
+            <LabelInput label="Time of Event" type="time" value={data.timeOfEvent} onChange={v => u('timeOfEvent', v)} />
+            <LabelInput label="When was event discovered?" value={data.whenDiscovered} onChange={v => u('whenDiscovered', v)} />
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+            <LabelInput label="Date of Incident Report" type="date" value={data.dateIncidentReport} onChange={v => u('dateIncidentReport', v)} />
+            <LabelInput label="Resident(s) Name" value={data.residentName} onChange={v => u('residentName', v)} />
+          </div>
+          <div className="mb-4">
+            <LabelInput label="Resident's Diagnosis" value={data.residentDiagnosis} onChange={v => u('residentDiagnosis', v)} />
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+            <LabelInput label="Unit" value={data.unit} onChange={v => u('unit', v)} />
+            <LabelInput label="Room" value={data.room} onChange={v => u('room', v)} />
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+            <LabelInput label="Where did event occur" value={data.whereOccurred} onChange={v => u('whereOccurred', v)} />
+            <LabelInput label="How was event discovered" value={data.howDiscovered} onChange={v => u('howDiscovered', v)} />
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+            <LabelInput label="Who reported the event" value={data.whoReported} onChange={v => u('whoReported', v)} />
+            <LabelInput label="Incident Report completed by" value={data.reportCompletedBy} onChange={v => u('reportCompletedBy', v)} />
+          </div>
+          <LabelTextarea label="Briefly Describe the event" value={data.eventDescription} onChange={v => u('eventDescription', v)} rows={6} className="mb-4" />
+          <LabelTextarea label="All steps taken immediately to ensure resident(s) are protected" value={data.stepsTaken} onChange={v => u('stepsTaken', v)} rows={4} />
+        </div>
+      );
+    }
+
+    /* ============================================================
+       SECTION B — Notifications
+       ============================================================ */
+    function NotificationRow({ label, item, onChange }) {
+      const u = (field, val) => onChange({ ...item, [field]: val });
+      return (
+        <div className="border rounded p-3 mb-3 bg-gray-50">
+          <div className="flex flex-wrap items-center gap-4">
+            <span className="text-sm font-medium text-gray-700 w-56">{label}</span>
+            <RadioGroup label="" value={item.answer} onChange={v => u('answer', v)} options={["Yes", "No"]} />
+            <LabelInput label="Date" type="date" value={item.date} onChange={v => u('date', v)} className="w-40" />
+          </div>
+          {item.answer === "No" && (
+            <div className="mt-2 ml-4">
+              <LabelInput label="If No, Why?" value={item.whyNot} onChange={v => u('whyNot', v)} />
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    function SectionB({ data, setData }) {
+      const labels = [
+        "Police Notified?",
+        "Resident Seen by MD?",
+        "Assessments Completed?",
+        "Admin (or designee) notified?",
+        "RP (Responsible Party) Notified?"
+      ];
+      const update = (idx, val) => {
+        setData(prev => {
+          const items = [...prev.items];
+          items[idx] = val;
+          return { ...prev, items };
+        });
+      };
+      return (
+        <div className="bg-white rounded-lg shadow p-5 mb-4">
+          <h2 className="text-lg font-bold text-mdh-blue mb-4 border-b pb-2">B. Notifications</h2>
+          {labels.map((lbl, idx) => (
+            <NotificationRow key={idx} label={lbl} item={data.items[idx]} onChange={v => update(idx, v)} />
+          ))}
+        </div>
+      );
+    }
+
+    /* ============================================================
+       SECTION C — Investigation Details
+       ============================================================ */
+    function SectionC({ data, setData }) {
+      const u = (field, val) => setData(prev => ({ ...prev, [field]: val }));
+      return (
+        <div className="bg-white rounded-lg shadow p-5 mb-4">
+          <h2 className="text-lg font-bold text-mdh-blue mb-4 border-b pb-2">C. Investigation Details</h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <LabelInput label="Investigation initiated by" value={data.initiatedBy} onChange={v => u('initiatedBy', v)} />
+            <LabelInput label="Date Investigation started" type="date" value={data.dateStarted} onChange={v => u('dateStarted', v)} />
+            <LabelInput label="Investigator" value={data.investigator} onChange={v => u('investigator', v)} />
+          </div>
+        </div>
+      );
+    }
+
+    /* ============================================================
+       INTERVIEW MODAL
+       ============================================================ */
+    function InterviewModal({ interview, eventType, onSave, onClose }) {
+      const [form, setForm] = useState(() => ({
+        intervieweeName: "",
+        intervieweeTitle: "",
+        center: "Coffman Nursing Home",
+        unitDept: "",
+        staffPatientName: "",
+        interviewerName: "",
+        incidentDate: "",
+        incidentTime: "",
+        interviewDate: "",
+        interviewTime: "",
+        interviewMethod: "In Person",
+        checkedQuestions: {},
+        answers: {},
+        additionalNotes: "",
+        otherQuestions: "",
+        ...interview
+      }));
+
+      const u = (field, val) => setForm(prev => ({ ...prev, [field]: val }));
+
+      const interviewType = form.type || "Other Interview";
+
+      const questions = (() => {
+        if (eventType === "Other" || interviewType === "Other Interview") return [];
+        const eventQuestions = QUESTION_BANK[eventType];
+        if (!eventQuestions) return [];
+        return eventQuestions[interviewType] || [];
+      })();
+
+      const toggleQuestion = (idx) => {
+        setForm(prev => {
+          const checked = { ...prev.checkedQuestions };
+          checked[idx] = !checked[idx];
+          return { ...prev, checkedQuestions: checked };
+        });
+      };
+
+      const setAnswer = (idx, val) => {
+        setForm(prev => {
+          const answers = { ...prev.answers };
+          answers[idx] = val;
+          return { ...prev, answers };
+        });
+      };
+
+      return (
+        <div className="fixed inset-0 z-50 bg-black bg-opacity-50 flex items-start justify-center overflow-y-auto p-4">
+          <div className="bg-white rounded-lg shadow-2xl w-full max-w-4xl my-4">
+            {/* Header */}
+            <div className="bg-mdh-blue text-white px-6 py-4 rounded-t-lg flex justify-between items-center">
+              <h3 className="text-lg font-bold">{interviewType}</h3>
+              <button onClick={onClose} className="text-white hover:text-gray-300 text-2xl leading-none">&times;</button>
+            </div>
+
+            <div className="p-6 max-h-[80vh] overflow-y-auto">
+              {/* Metadata */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                <LabelInput label="Interviewee Name" value={form.intervieweeName} onChange={v => u('intervieweeName', v)} />
+                <LabelInput label="Interviewee Title/Position" value={form.intervieweeTitle} onChange={v => u('intervieweeTitle', v)} />
+                <LabelInput label="Center" value={form.center} onChange={() => {}} readOnly />
+                <LabelInput label="Unit/Dept" value={form.unitDept} onChange={v => u('unitDept', v)} />
+                <LabelInput label="Name of Staff/Patient if applicable" value={form.staffPatientName} onChange={v => u('staffPatientName', v)} className="md:col-span-2" />
+                <LabelInput label="Name of Interviewer" value={form.interviewerName} onChange={v => u('interviewerName', v)} className="md:col-span-2" />
+              </div>
+
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                <LabelInput label="Date of Alleged Incident" type="date" value={form.incidentDate} onChange={v => u('incidentDate', v)} />
+                <LabelInput label="Time" type="time" value={form.incidentTime} onChange={v => u('incidentTime', v)} />
+                <LabelInput label="Date of Interview" type="date" value={form.interviewDate} onChange={v => u('interviewDate', v)} />
+                <LabelInput label="Time" type="time" value={form.interviewTime} onChange={v => u('interviewTime', v)} />
+              </div>
+
+              <div className="mb-6">
+                <RadioGroup label="Interview Type" value={form.interviewMethod} onChange={v => u('interviewMethod', v)} options={["In Person", "Via Phone"]} />
+              </div>
+
+              {/* Questions */}
+              {(eventType === "Other" || interviewType === "Other Interview") ? (
+                <div className="mb-6">
+                  <h4 className="text-sm font-bold text-mdh-blue mb-2 uppercase">Additional Questions (Free-Form)</h4>
+                  <textarea
+                    value={form.otherQuestions || ""}
+                    onChange={e => u('otherQuestions', e.target.value)}
+                    rows={8}
+                    placeholder="Enter your questions and answers here..."
+                    className="w-full border rounded px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-mdh-light"
+                  />
+                </div>
+              ) : (
+                <div className="mb-6">
+                  <h4 className="text-sm font-bold text-mdh-blue mb-3 uppercase">Suggested Questions</h4>
+                  <p className="text-xs text-gray-500 mb-3">Check the questions you asked. A text area will appear for each to record the answer.</p>
+                  {questions.map((q, idx) => (
+                    <div key={idx} className="mb-3 border rounded p-3 bg-gray-50">
+                      <label className="flex items-start gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={!!form.checkedQuestions[idx]}
+                          onChange={() => toggleQuestion(idx)}
+                          className="mt-1 accent-mdh-blue"
+                        />
+                        <span className="text-sm font-medium text-gray-700">{q}</span>
+                      </label>
+                      {form.checkedQuestions[idx] && (
+                        <textarea
+                          value={form.answers[idx] || ""}
+                          onChange={e => setAnswer(idx, e.target.value)}
+                          rows={3}
+                          placeholder="Record the answer..."
+                          className="w-full mt-2 border rounded px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-mdh-light"
+                        />
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Additional Notes */}
+              <div className="mb-6">
+                <h4 className="text-sm font-bold text-mdh-blue mb-2 uppercase">Additional Notes / Free-Form Statement</h4>
+                <textarea
+                  value={form.additionalNotes || ""}
+                  onChange={e => u('additionalNotes', e.target.value)}
+                  rows={5}
+                  placeholder="Any additional notes or statements..."
+                  className="w-full border rounded px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-mdh-light"
+                />
+              </div>
+
+              {/* Signature attestation */}
+              <div className="border-t pt-4">
+                <p className="text-xs text-gray-500 italic mb-2">
+                  My signature below indicates that I have read and understood the statement, and that it is true, accurate and complete.
+                </p>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-4 bg-gray-50 rounded-b-lg flex justify-end gap-3">
+              <button onClick={onClose} className="px-4 py-2 border rounded text-sm text-gray-600 hover:bg-gray-100">Cancel</button>
+              <button
+                onClick={() => onSave(form)}
+                className="px-6 py-2 bg-mdh-blue text-white rounded text-sm font-medium hover:bg-mdh-light transition"
+              >
+                Save Interview
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    /* ============================================================
+       SECTION D — Interviews
+       ============================================================ */
+    function SectionD({ data, setData }) {
+      const [modalOpen, setModalOpen] = useState(false);
+      const [editIdx, setEditIdx] = useState(null);
+      const [currentType, setCurrentType] = useState("");
+
+      const u = (field, val) => setData(prev => ({ ...prev, [field]: val }));
+
+      const openNew = (type) => {
+        setCurrentType(type);
+        setEditIdx(null);
+        setModalOpen(true);
+      };
+
+      const openEdit = (idx) => {
+        setCurrentType(data.interviews[idx].type);
+        setEditIdx(idx);
+        setModalOpen(true);
+      };
+
+      const deleteInterview = (idx) => {
+        if (confirm("Delete this interview?")) {
+          setData(prev => ({
+            ...prev,
+            interviews: prev.interviews.filter((_, i) => i !== idx)
+          }));
+        }
+      };
+
+      const saveInterview = (formData) => {
+        const entry = { ...formData, type: currentType };
+        setData(prev => {
+          const interviews = [...prev.interviews];
+          if (editIdx !== null) {
+            interviews[editIdx] = entry;
+          } else {
+            interviews.push(entry);
+          }
+          return { ...prev, interviews };
+        });
+        setModalOpen(false);
+      };
+
+      return (
+        <div className="bg-white rounded-lg shadow p-5 mb-4">
+          <h2 className="text-lg font-bold text-mdh-blue mb-4 border-b pb-2">D. Interviews</h2>
+
+          {/* Event Type */}
+          <div className="mb-4">
+            <label className="block text-xs font-semibold text-gray-600 mb-1">Event Type</label>
+            <select
+              value={data.eventType}
+              onChange={e => u('eventType', e.target.value)}
+              className="w-full md:w-96 border rounded px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-mdh-light"
+            >
+              {EVENT_TYPES.map(et => (
+                <option key={et} value={et}>{et}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Add Interview Buttons */}
+          <div className="mb-4">
+            <p className="text-xs font-semibold text-gray-600 mb-2">Add Interview</p>
+            <div className="flex flex-wrap gap-2">
+              {INTERVIEW_TYPES.map(it => (
+                <button
+                  key={it}
+                  onClick={() => openNew(it)}
+                  className="px-3 py-2 bg-mdh-accent text-mdh-blue rounded text-xs font-medium hover:bg-mdh-light hover:text-white transition"
+                >
+                  + {it}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Interview Cards */}
+          {data.interviews.length > 0 && (
+            <div className="space-y-2">
+              {data.interviews.map((iv, idx) => (
+                <div key={idx} className="border rounded p-3 bg-gray-50 flex justify-between items-center">
+                  <div>
+                    <span className="font-medium text-sm text-gray-800">{iv.intervieweeName || "Unnamed"}</span>
+                    <span className="text-xs text-gray-500 ml-2">({iv.type})</span>
+                    {iv.interviewDate && <span className="text-xs text-gray-400 ml-2">{iv.interviewDate}</span>}
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={() => openEdit(idx)} className="text-xs px-2 py-1 bg-mdh-light text-white rounded hover:bg-mdh-blue transition">Edit</button>
+                    <button onClick={() => deleteInterview(idx)} className="text-xs px-2 py-1 bg-red-500 text-white rounded hover:bg-red-700 transition">Delete</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Modal */}
+          {modalOpen && (
+            <InterviewModal
+              interview={editIdx !== null ? data.interviews[editIdx] : { type: currentType }}
+              eventType={data.eventType}
+              onSave={saveInterview}
+              onClose={() => setModalOpen(false)}
+            />
+          )}
+        </div>
+      );
+    }
+
+    /* ============================================================
+       SECTION E — Employee Records Review
+       ============================================================ */
+    function SectionE({ data, setData }) {
+      const addEmployee = () => {
+        setData(prev => ({
+          ...prev,
+          employees: [...prev.employees, ""]
+        }));
+      };
+
+      const updateEmployee = (idx, val) => {
+        setData(prev => {
+          const employees = [...prev.employees];
+          employees[idx] = val;
+          return { ...prev, employees };
+        });
+      };
+
+      const removeEmployee = (idx) => {
+        setData(prev => ({
+          ...prev,
+          employees: prev.employees.filter((_, i) => i !== idx)
+        }));
+      };
+
+      return (
+        <div className="bg-white rounded-lg shadow p-5 mb-4">
+          <h2 className="text-lg font-bold text-mdh-blue mb-4 border-b pb-2">E. Employee Records Review</h2>
+          <div className="mb-4">
+            {data.employees.map((emp, idx) => (
+              <div key={idx} className="flex gap-2 mb-2">
+                <input
+                  type="text"
+                  value={emp}
+                  onChange={e => updateEmployee(idx, e.target.value)}
+                  placeholder="Employee Name"
+                  className="flex-1 border rounded px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-mdh-light"
+                />
+                <button
+                  onClick={() => removeEmployee(idx)}
+                  className="px-3 py-2 bg-red-500 text-white rounded text-xs hover:bg-red-700 transition"
+                >
+                  Remove
+                </button>
+              </div>
+            ))}
+            <button
+              onClick={addEmployee}
+              className="px-4 py-2 bg-mdh-accent text-mdh-blue rounded text-sm font-medium hover:bg-mdh-light hover:text-white transition"
+            >
+              + Add Employee
+            </button>
+          </div>
+          <LabelTextarea
+            label="Describe significant information gathered from these reviews"
+            value={data.description}
+            onChange={v => setData(prev => ({ ...prev, description: v }))}
+            rows={5}
+          />
+        </div>
+      );
+    }
+
+    /* ============================================================
+       SECTION F — Investigation Timeline
+       ============================================================ */
+    function SectionF({ data, setData }) {
+      const updateRow = (idx, field, val) => {
+        setData(prev => {
+          const rows = [...prev.rows];
+          rows[idx] = { ...rows[idx], [field]: val };
+          return { ...prev, rows };
+        });
+      };
+
+      return (
+        <div className="bg-white rounded-lg shadow p-5 mb-4">
+          <h2 className="text-lg font-bold text-mdh-blue mb-4 border-b pb-2">F. Investigation Timeline Notification</h2>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm border-collapse">
+              <thead>
+                <tr className="bg-mdh-blue text-white">
+                  <th className="border p-2 text-left w-1/3">Who Notified</th>
+                  <th className="border p-2 text-left w-1/3">Time and Date</th>
+                  <th className="border p-2 text-left w-1/3">By Whom</th>
+                </tr>
+              </thead>
+              <tbody>
+                {TIMELINE_ROWS.map((label, idx) => (
+                  <tr key={idx} className={idx % 2 === 0 ? "bg-white" : "bg-gray-50"}>
+                    <td className="border p-2 font-medium text-gray-700">{label}</td>
+                    <td className="border p-1">
+                      <input
+                        type="datetime-local"
+                        value={data.rows[idx]?.datetime || ""}
+                        onChange={e => updateRow(idx, 'datetime', e.target.value)}
+                        className="w-full border rounded px-2 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-mdh-light"
+                      />
+                    </td>
+                    <td className="border p-1">
+                      <input
+                        type="text"
+                        value={data.rows[idx]?.byWhom || ""}
+                        onChange={e => updateRow(idx, 'byWhom', e.target.value)}
+                        className="w-full border rounded px-2 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-mdh-light"
+                      />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      );
+    }
+
+    /* ============================================================
+       PRINT VIEWS
+       ============================================================ */
+    function InterviewPrintView({ interview, eventType }) {
+      const questions = (() => {
+        if (eventType === "Other" || interview.type === "Other Interview") return [];
+        const eventQuestions = QUESTION_BANK[eventType];
+        if (!eventQuestions) return [];
+        return eventQuestions[interview.type] || [];
+      })();
+
+      const checkedQuestions = Object.entries(interview.checkedQuestions || {})
+        .filter(([, checked]) => checked)
+        .map(([idx]) => parseInt(idx));
+
+      return (
+        <div className="interview-print-page print-only p-6">
+          {/* Header */}
+          <div className="bg-black text-white text-center font-bold py-2 text-sm mb-0">
+            INFORMATION OF STAFF/OR PATIENT
+          </div>
+          <table className="w-full border-collapse text-xs mb-0">
+            <tbody>
+              <tr>
+                <td className="border p-2" colSpan={2}>
+                  <strong>Name and Title of person being interviewed:</strong> {interview.intervieweeName} {interview.intervieweeTitle ? `- ${interview.intervieweeTitle}` : ""}
+                </td>
+              </tr>
+              <tr>
+                <td className="border p-2"><strong>Center:</strong> Coffman Nursing Home</td>
+                <td className="border p-2"><strong>Unit/Dept:</strong> {interview.unitDept}</td>
+              </tr>
+              <tr>
+                <td className="border p-2" colSpan={2}>
+                  <strong>Name of Staff / or Patient (if applicable):</strong> {interview.staffPatientName}
+                </td>
+              </tr>
+              <tr>
+                <td className="border p-2" colSpan={2}>
+                  <strong>Name and Title of person conducting interview:</strong> {interview.interviewerName}
+                </td>
+              </tr>
+              <tr>
+                <td className="border p-2">
+                  <strong>Date and Time of Alleged Incident:</strong> {interview.incidentDate} {interview.incidentTime}
+                </td>
+                <td className="border p-2">
+                  <strong>Date and Time of Interview:</strong> {interview.interviewDate} {interview.interviewTime}<br/>
+                  <strong>Interview Type:</strong> {interview.interviewMethod}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+
+          {/* Statement */}
+          <div className="bg-black text-white text-center font-bold py-2 text-sm">
+            STATEMENT OF STAFF/OR PATIENT
+          </div>
+          <div className="border p-3 min-h-[200px] text-xs whitespace-pre-wrap">
+            {(eventType === "Other" || interview.type === "Other Interview") ? (
+              <div>{interview.otherQuestions}</div>
+            ) : (
+              checkedQuestions.map(idx => (
+                <div key={idx} className="mb-3">
+                  <strong>Q: {questions[idx]}</strong>
+                  <br />
+                  A: {interview.answers?.[idx] || ""}
+                </div>
+              ))
+            )}
+            {interview.additionalNotes && (
+              <div className="mt-3 pt-2 border-t">
+                <strong>Additional Notes:</strong><br/>
+                {interview.additionalNotes}
+              </div>
+            )}
+          </div>
+
+          {/* Attestation */}
+          <div className="bg-black text-white text-center py-2 text-xs font-bold">
+            My signature below indicates that I have read and understood the statement, and that it is true, accurate and complete.
+          </div>
+          <table className="w-full border-collapse text-xs">
+            <tbody>
+              <tr>
+                <td className="border p-4 h-10" colSpan={2}></td>
+              </tr>
+              <tr>
+                <td className="border p-2"><strong>Signature of Witness:</strong></td>
+                <td className="border p-2"><strong>Date:</strong></td>
+              </tr>
+              <tr className="bg-black text-white">
+                <td className="border p-2"><strong>Name of Person being interviewed:</strong></td>
+                <td className="border p-2"><strong>Date:</strong></td>
+              </tr>
+              <tr>
+                <td className="border p-4 h-8" colSpan={2}></td>
+              </tr>
+              <tr className="bg-black text-white">
+                <td className="border p-2"><strong>Name of Interviewer:</strong></td>
+                <td className="border p-2"><strong>Date:</strong></td>
+              </tr>
+              <tr>
+                <td className="border p-4 h-8" colSpan={2}></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      );
+    }
+
+    /* ============================================================
+       COPY TO CLIPBOARD
+       ============================================================ */
+    function buildClipboardText(investigator, sections, sectionA, sectionB, sectionC, sectionD, sectionE, sectionF) {
+      let text = "COFFMAN NURSING HOME & REHABILITATION CENTER\nINVESTIGATION SUMMARY FORM\n\n";
+      text += `Investigator: ${investigator.name}, ${investigator.title}\n`;
+      text += "=".repeat(60) + "\n\n";
+
+      if (sections.A) {
+        text += "SECTION A: REPORT INFORMATION\n";
+        text += "-".repeat(40) + "\n";
+        if (sectionA.dateOfEvent) text += `Date of Event: ${sectionA.dateOfEvent}\n`;
+        if (sectionA.timeOfEvent) text += `Time of Event: ${sectionA.timeOfEvent}\n`;
+        if (sectionA.whenDiscovered) text += `When Discovered: ${sectionA.whenDiscovered}\n`;
+        if (sectionA.dateIncidentReport) text += `Date of Incident Report: ${sectionA.dateIncidentReport}\n`;
+        if (sectionA.residentName) text += `Resident(s) Name: ${sectionA.residentName}\n`;
+        if (sectionA.residentDiagnosis) text += `Resident's Diagnosis: ${sectionA.residentDiagnosis}\n`;
+        if (sectionA.unit) text += `Unit: ${sectionA.unit}\n`;
+        if (sectionA.room) text += `Room: ${sectionA.room}\n`;
+        if (sectionA.whereOccurred) text += `Where Event Occurred: ${sectionA.whereOccurred}\n`;
+        if (sectionA.howDiscovered) text += `How Discovered: ${sectionA.howDiscovered}\n`;
+        if (sectionA.whoReported) text += `Who Reported: ${sectionA.whoReported}\n`;
+        if (sectionA.reportCompletedBy) text += `Report Completed By: ${sectionA.reportCompletedBy}\n`;
+        if (sectionA.eventDescription) text += `\nEvent Description:\n${sectionA.eventDescription}\n`;
+        if (sectionA.stepsTaken) text += `\nSteps Taken:\n${sectionA.stepsTaken}\n`;
+        text += "\n";
+      }
+
+      if (sections.B) {
+        text += "SECTION B: NOTIFICATIONS\n";
+        text += "-".repeat(40) + "\n";
+        const labels = ["Police Notified", "Resident Seen by MD", "Assessments Completed", "Admin Notified", "RP Notified"];
+        sectionB.items.forEach((item, idx) => {
+          if (item.answer) {
+            text += `${labels[idx]}: ${item.answer}`;
+            if (item.date) text += ` (Date: ${item.date})`;
+            if (item.answer === "No" && item.whyNot) text += ` - Reason: ${item.whyNot}`;
+            text += "\n";
+          }
+        });
+        text += "\n";
+      }
+
+      if (sections.C) {
+        text += "SECTION C: INVESTIGATION DETAILS\n";
+        text += "-".repeat(40) + "\n";
+        if (sectionC.initiatedBy) text += `Initiated By: ${sectionC.initiatedBy}\n`;
+        if (sectionC.dateStarted) text += `Date Started: ${sectionC.dateStarted}\n`;
+        if (sectionC.investigator) text += `Investigator: ${sectionC.investigator}\n`;
+        text += "\n";
+      }
+
+      if (sections.D) {
+        text += "SECTION D: INTERVIEWS\n";
+        text += "-".repeat(40) + "\n";
+        text += `Event Type: ${sectionD.eventType}\n\n`;
+
+        sectionD.interviews.forEach((iv, idx) => {
+          text += `--- Interview #${idx + 1}: ${iv.type} ---\n`;
+          text += `Interviewee: ${iv.intervieweeName || "N/A"}`;
+          if (iv.intervieweeTitle) text += ` (${iv.intervieweeTitle})`;
+          text += "\n";
+          if (iv.unitDept) text += `Unit/Dept: ${iv.unitDept}\n`;
+          if (iv.staffPatientName) text += `Staff/Patient Name: ${iv.staffPatientName}\n`;
+          if (iv.interviewerName) text += `Interviewer: ${iv.interviewerName}\n`;
+          if (iv.incidentDate) text += `Incident Date/Time: ${iv.incidentDate} ${iv.incidentTime || ""}\n`;
+          if (iv.interviewDate) text += `Interview Date/Time: ${iv.interviewDate} ${iv.interviewTime || ""}\n`;
+          if (iv.interviewMethod) text += `Method: ${iv.interviewMethod}\n`;
+
+          const eventType = sectionD.eventType;
+          if (eventType === "Other" || iv.type === "Other Interview") {
+            if (iv.otherQuestions) {
+              text += `\n${iv.otherQuestions}\n`;
+            }
+          } else {
+            const questions = (() => {
+              const eq = QUESTION_BANK[eventType];
+              if (!eq) return [];
+              return eq[iv.type] || [];
+            })();
+            const checked = Object.entries(iv.checkedQuestions || {}).filter(([, c]) => c).map(([i]) => parseInt(i));
+            if (checked.length > 0) {
+              text += "\nQuestions & Answers:\n";
+              checked.forEach(i => {
+                text += `  Q: ${questions[i]}\n`;
+                text += `  A: ${iv.answers?.[i] || ""}\n\n`;
+              });
+            }
+          }
+
+          if (iv.additionalNotes) {
+            text += `Additional Notes: ${iv.additionalNotes}\n`;
+          }
+          text += "\n";
+        });
+      }
+
+      if (sections.E) {
+        text += "SECTION E: EMPLOYEE RECORDS REVIEW\n";
+        text += "-".repeat(40) + "\n";
+        const emps = sectionE.employees.filter(e => e.trim());
+        if (emps.length > 0) {
+          text += `Employees Reviewed: ${emps.join(", ")}\n`;
+        }
+        if (sectionE.description) text += `\nFindings:\n${sectionE.description}\n`;
+        text += "\n";
+      }
+
+      if (sections.F) {
+        text += "SECTION F: INVESTIGATION TIMELINE NOTIFICATION\n";
+        text += "-".repeat(40) + "\n";
+        TIMELINE_ROWS.forEach((label, idx) => {
+          const row = sectionF.rows[idx];
+          if (row && (row.datetime || row.byWhom)) {
+            text += `${label}: ${row.datetime || "N/A"} - By: ${row.byWhom || "N/A"}\n`;
+          }
+        });
+        text += "\n";
+      }
+
+      return text;
+    }
+
+    /* ============================================================
+       WORD EXPORT
+       ============================================================ */
+    async function exportToWord(investigator, sections, sectionA, sectionB, sectionC, sectionD, sectionE, sectionF) {
+      const lib = window.docxLib;
+      if (!lib) { alert("Word export library is still loading. Please try again in a moment."); return; }
+      const {
+        Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell,
+        WidthType, BorderStyle, AlignmentType, HeadingLevel,
+        ShadingType, PageBreak, VerticalAlign, SectionType,
+        convertInchesToTwip
+      } = lib;
+
+      const BLACK_SHADING = { type: ShadingType.SOLID, color: "000000", fill: "000000" };
+      const WHITE_BOLD = { bold: true, color: "FFFFFF", size: 18, font: "Arial" };
+      const NORMAL_TEXT = { size: 18, font: "Arial" };
+      const SMALL_TEXT = { size: 16, font: "Arial" };
+      const BOLD_TEXT = { bold: true, size: 18, font: "Arial" };
+      const BORDER_SINGLE = { style: BorderStyle.SINGLE, size: 1, color: "000000" };
+      const CELL_BORDERS = { top: BORDER_SINGLE, bottom: BORDER_SINGLE, left: BORDER_SINGLE, right: BORDER_SINGLE };
+
+      function makeHeaderCell(text, colspan) {
+        return new TableCell({
+          shading: BLACK_SHADING,
+          borders: CELL_BORDERS,
+          columnSpan: colspan || 2,
+          verticalAlign: VerticalAlign.CENTER,
+          children: [
+            new Paragraph({
+              alignment: AlignmentType.CENTER,
+              children: [new TextRun({ ...WHITE_BOLD, text })],
+              spacing: { before: 40, after: 40 }
+            })
+          ]
+        });
+      }
+
+      function makeCell(children, colspan, shading) {
+        const opts = {
+          borders: CELL_BORDERS,
+          verticalAlign: VerticalAlign.CENTER,
+          children: Array.isArray(children) ? children : [children]
+        };
+        if (colspan) opts.columnSpan = colspan;
+        if (shading) opts.shading = shading;
+        return new TableCell(opts);
+      }
+
+      function p(runs, alignment) {
+        return new Paragraph({
+          children: Array.isArray(runs) ? runs : [runs],
+          alignment: alignment || AlignmentType.LEFT,
+          spacing: { before: 20, after: 20 }
+        });
+      }
+
+      /* Build summary section children */
+      const summaryChildren = [];
+
+      summaryChildren.push(
+        new Paragraph({
+          alignment: AlignmentType.CENTER,
+          children: [new TextRun({ bold: true, size: 28, font: "Arial", text: "Coffman Nursing Home & Rehabilitation Center" })],
+          spacing: { after: 80 }
+        }),
+        new Paragraph({
+          alignment: AlignmentType.CENTER,
+          children: [new TextRun({ bold: true, size: 24, font: "Arial", text: "Investigation Summary Form" })],
+          spacing: { after: 200 }
+        }),
+        new Paragraph({
+          children: [
+            new TextRun({ ...BOLD_TEXT, text: "Investigator: " }),
+            new TextRun({ ...NORMAL_TEXT, text: `${investigator.name}` }),
+            new TextRun({ ...BOLD_TEXT, text: "    Position/Title: " }),
+            new TextRun({ ...NORMAL_TEXT, text: `${investigator.title}` })
+          ],
+          spacing: { after: 200 }
+        })
+      );
+
+      if (sections.A) {
+        summaryChildren.push(
+          new Paragraph({ children: [new TextRun({ ...BOLD_TEXT, size: 22, text: "A. Report Information" })], spacing: { before: 200, after: 100 } })
+        );
+        const aFields = [
+          ["Date of Event", sectionA.dateOfEvent],
+          ["Time of Event", sectionA.timeOfEvent],
+          ["When Discovered", sectionA.whenDiscovered],
+          ["Date of Incident Report", sectionA.dateIncidentReport],
+          ["Resident(s) Name", sectionA.residentName],
+          ["Resident's Diagnosis", sectionA.residentDiagnosis],
+          ["Unit", sectionA.unit],
+          ["Room", sectionA.room],
+          ["Where Event Occurred", sectionA.whereOccurred],
+          ["How Discovered", sectionA.howDiscovered],
+          ["Who Reported", sectionA.whoReported],
+          ["Report Completed By", sectionA.reportCompletedBy]
+        ];
+        aFields.forEach(([label, value]) => {
+          if (value) {
+            summaryChildren.push(p([new TextRun({ ...BOLD_TEXT, text: `${label}: ` }), new TextRun({ ...NORMAL_TEXT, text: value })]));
+          }
+        });
+        if (sectionA.eventDescription) {
+          summaryChildren.push(
+            p([new TextRun({ ...BOLD_TEXT, text: "Event Description:" })]),
+            p([new TextRun({ ...NORMAL_TEXT, text: sectionA.eventDescription })])
+          );
+        }
+        if (sectionA.stepsTaken) {
+          summaryChildren.push(
+            p([new TextRun({ ...BOLD_TEXT, text: "Steps Taken:" })]),
+            p([new TextRun({ ...NORMAL_TEXT, text: sectionA.stepsTaken })])
+          );
+        }
+      }
+
+      if (sections.B) {
+        summaryChildren.push(
+          new Paragraph({ children: [new TextRun({ ...BOLD_TEXT, size: 22, text: "B. Notifications" })], spacing: { before: 200, after: 100 } })
+        );
+        const labels = ["Police Notified", "Resident Seen by MD", "Assessments Completed", "Admin Notified", "RP Notified"];
+        sectionB.items.forEach((item, idx) => {
+          if (item.answer) {
+            let line = `${labels[idx]}: ${item.answer}`;
+            if (item.date) line += ` (Date: ${item.date})`;
+            if (item.answer === "No" && item.whyNot) line += ` - Reason: ${item.whyNot}`;
+            summaryChildren.push(p([new TextRun({ ...NORMAL_TEXT, text: line })]));
+          }
+        });
+      }
+
+      if (sections.C) {
+        summaryChildren.push(
+          new Paragraph({ children: [new TextRun({ ...BOLD_TEXT, size: 22, text: "C. Investigation Details" })], spacing: { before: 200, after: 100 } })
+        );
+        if (sectionC.initiatedBy) summaryChildren.push(p([new TextRun({ ...BOLD_TEXT, text: "Initiated By: " }), new TextRun({ ...NORMAL_TEXT, text: sectionC.initiatedBy })]));
+        if (sectionC.dateStarted) summaryChildren.push(p([new TextRun({ ...BOLD_TEXT, text: "Date Started: " }), new TextRun({ ...NORMAL_TEXT, text: sectionC.dateStarted })]));
+        if (sectionC.investigator) summaryChildren.push(p([new TextRun({ ...BOLD_TEXT, text: "Investigator: " }), new TextRun({ ...NORMAL_TEXT, text: sectionC.investigator })]));
+      }
+
+      if (sections.D) {
+        summaryChildren.push(
+          new Paragraph({ children: [new TextRun({ ...BOLD_TEXT, size: 22, text: "D. Interviews" })], spacing: { before: 200, after: 100 } })
+        );
+        summaryChildren.push(p([new TextRun({ ...BOLD_TEXT, text: "Event Type: " }), new TextRun({ ...NORMAL_TEXT, text: sectionD.eventType })]));
+        summaryChildren.push(p([new TextRun({ ...BOLD_TEXT, text: `Total Interviews: ${sectionD.interviews.length}` })]));
+        sectionD.interviews.forEach((iv, idx) => {
+          summaryChildren.push(p([new TextRun({ ...NORMAL_TEXT, text: `  ${idx + 1}. ${iv.intervieweeName || "Unnamed"} (${iv.type}) - ${iv.interviewDate || "No date"}` })]));
+        });
+      }
+
+      if (sections.E) {
+        summaryChildren.push(
+          new Paragraph({ children: [new TextRun({ ...BOLD_TEXT, size: 22, text: "E. Employee Records Review" })], spacing: { before: 200, after: 100 } })
+        );
+        const emps = sectionE.employees.filter(e => e.trim());
+        if (emps.length > 0) {
+          summaryChildren.push(p([new TextRun({ ...BOLD_TEXT, text: "Employees: " }), new TextRun({ ...NORMAL_TEXT, text: emps.join(", ") })]));
+        }
+        if (sectionE.description) {
+          summaryChildren.push(p([new TextRun({ ...BOLD_TEXT, text: "Findings:" })]), p([new TextRun({ ...NORMAL_TEXT, text: sectionE.description })]));
+        }
+      }
+
+      if (sections.F) {
+        summaryChildren.push(
+          new Paragraph({ children: [new TextRun({ ...BOLD_TEXT, size: 22, text: "F. Investigation Timeline Notification" })], spacing: { before: 200, after: 100 } })
+        );
+        TIMELINE_ROWS.forEach((label, idx) => {
+          const row = sectionF.rows[idx];
+          if (row && (row.datetime || row.byWhom)) {
+            summaryChildren.push(p([new TextRun({ ...NORMAL_TEXT, text: `${label}: ${row.datetime || "N/A"} - By: ${row.byWhom || "N/A"}` })]));
+          }
+        });
+      }
+
+      /* Build interview sections */
+      const interviewSections = [];
+
+      if (sections.D) {
+        sectionD.interviews.forEach((iv) => {
+          const eventType = sectionD.eventType;
+          const questions = (() => {
+            if (eventType === "Other" || iv.type === "Other Interview") return [];
+            const eq = QUESTION_BANK[eventType];
+            if (!eq) return [];
+            return eq[iv.type] || [];
+          })();
+
+          const checkedIdxs = Object.entries(iv.checkedQuestions || {}).filter(([, c]) => c).map(([i]) => parseInt(i));
+
+          /* Build Q&A text */
+          let statementText = "";
+          if (eventType === "Other" || iv.type === "Other Interview") {
+            statementText = iv.otherQuestions || "";
+          } else {
+            checkedIdxs.forEach(i => {
+              statementText += `Q: ${questions[i]}\nA: ${iv.answers?.[i] || ""}\n\n`;
+            });
+          }
+          if (iv.additionalNotes) {
+            statementText += `\nAdditional Notes:\n${iv.additionalNotes}`;
+          }
+
+          const interviewTable = new Table({
+            width: { size: 100, type: WidthType.PERCENTAGE },
+            rows: [
+              /* Row 0: Black header */
+              new TableRow({
+                children: [makeHeaderCell("INFORMATION OF STAFF/OR PATIENT", 2)]
+              }),
+              /* Row 1: Name and Title */
+              new TableRow({
+                children: [
+                  makeCell(
+                    p([new TextRun({ ...BOLD_TEXT, text: "Name and Title of person being interviewed: " }), new TextRun({ ...SMALL_TEXT, text: `${iv.intervieweeName || ""}${iv.intervieweeTitle ? " - " + iv.intervieweeTitle : ""}` })]),
+                    2
+                  )
+                ]
+              }),
+              /* Row 2: Center | Unit/Dept */
+              new TableRow({
+                children: [
+                  makeCell(p([new TextRun({ ...BOLD_TEXT, text: "Center: " }), new TextRun({ ...SMALL_TEXT, text: "Coffman Nursing Home" })])),
+                  makeCell(p([new TextRun({ ...BOLD_TEXT, text: "Unit/Dept: " }), new TextRun({ ...SMALL_TEXT, text: iv.unitDept || "" })]))
+                ]
+              }),
+              /* Row 3: Staff/Patient */
+              new TableRow({
+                children: [
+                  makeCell(
+                    p([new TextRun({ ...BOLD_TEXT, text: "Name of Staff / or Patient (if applicable): " }), new TextRun({ ...SMALL_TEXT, text: iv.staffPatientName || "" })]),
+                    2
+                  )
+                ]
+              }),
+              /* Row 4: Interviewer */
+              new TableRow({
+                children: [
+                  makeCell(
+                    p([new TextRun({ ...BOLD_TEXT, text: "Name and Title of person conducting interview: " }), new TextRun({ ...SMALL_TEXT, text: iv.interviewerName || "" })]),
+                    2
+                  )
+                ]
+              }),
+              /* Row 5: Dates */
+              new TableRow({
+                children: [
+                  makeCell(p([new TextRun({ ...BOLD_TEXT, text: "Date and Time of Alleged Incident: " }), new TextRun({ ...SMALL_TEXT, text: `${iv.incidentDate || ""} ${iv.incidentTime || ""}` })])),
+                  makeCell(p([
+                    new TextRun({ ...BOLD_TEXT, text: "Date and Time of Interview: " }),
+                    new TextRun({ ...SMALL_TEXT, text: `${iv.interviewDate || ""} ${iv.interviewTime || ""}` }),
+                    new TextRun({ ...SMALL_TEXT, text: `\nInterview Type: ${iv.interviewMethod || ""}`, break: 1 })
+                  ]))
+                ]
+              }),
+              /* Row 6: Statement header */
+              new TableRow({
+                children: [makeHeaderCell("STATEMENT OF STAFF/OR PATIENT", 2)]
+              }),
+              /* Row 7: Statement body */
+              new TableRow({
+                children: [
+                  makeCell(
+                    p([new TextRun({ ...SMALL_TEXT, text: statementText })]),
+                    2
+                  )
+                ]
+              }),
+              /* Row 8: Attestation header */
+              new TableRow({
+                children: [
+                  makeHeaderCell("My signature below indicates that I have read and understood the statement, and that it is true, accurate and complete.", 2)
+                ]
+              }),
+              /* Row 9: Blank signature */
+              new TableRow({
+                children: [
+                  makeCell(p([new TextRun({ ...SMALL_TEXT, text: "" })]), 2)
+                ]
+              }),
+              /* Row 10: Signature of Witness | Date */
+              new TableRow({
+                children: [
+                  makeCell(p([new TextRun({ ...BOLD_TEXT, text: "Signature of Witness:" })])),
+                  makeCell(p([new TextRun({ ...BOLD_TEXT, text: "Date:" })]))
+                ]
+              }),
+              /* Row 11: Black - Name of Person | Date */
+              new TableRow({
+                children: [
+                  makeCell(p([new TextRun({ ...WHITE_BOLD, text: "Name of Person being interviewed:" })]), undefined, BLACK_SHADING),
+                  makeCell(p([new TextRun({ ...WHITE_BOLD, text: "Date:" })]), undefined, BLACK_SHADING)
+                ]
+              }),
+              /* Row 12: Blank spacer */
+              new TableRow({
+                children: [
+                  makeCell(p([new TextRun({ ...SMALL_TEXT, text: "" })]), 2)
+                ]
+              }),
+              /* Row 13: Black - Name of Interviewer | Date */
+              new TableRow({
+                children: [
+                  makeCell(p([new TextRun({ ...WHITE_BOLD, text: "Name of Interviewer:" })]), undefined, BLACK_SHADING),
+                  makeCell(p([new TextRun({ ...WHITE_BOLD, text: "Date:" })]), undefined, BLACK_SHADING)
+                ]
+              }),
+              /* Row 14: Blank */
+              new TableRow({
+                children: [
+                  makeCell(p([new TextRun({ ...SMALL_TEXT, text: "" })]), 2)
+                ]
+              })
+            ]
+          });
+
+          interviewSections.push({
+            properties: {
+              type: SectionType.NEXT_PAGE,
+              page: {
+                margin: { top: 720, right: 720, bottom: 720, left: 720 }
+              }
+            },
+            children: [interviewTable]
+          });
+        });
+      }
+
+      const doc = new Document({
+        sections: [
+          {
+            properties: {
+              page: {
+                margin: { top: 720, right: 720, bottom: 720, left: 720 }
+              }
+            },
+            children: summaryChildren
+          },
+          ...interviewSections
+        ]
+      });
+
+      const blob = await Packer.toBlob(doc);
+      downloadBlob(blob, "Investigation_Summary.docx");
+    }
+
+    function downloadBlob(blob, filename) {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+
+    /* ============================================================
+       MAIN APP
+       ============================================================ */
+    function App() {
+      const [toast, setToast] = useState({ visible: false, message: "" });
+
+      const [investigator, setInvestigator] = useState({
+        name: "Michael Kuritsky",
+        title: ""
+      });
+
+      const [sections, setSections] = useState({
+        A: false, B: false, C: false, D: false, E: false, F: false
+      });
+
+      const toggleSection = (key) => {
+        setSections(prev => ({ ...prev, [key]: !prev[key] }));
+      };
+
+      const [sectionA, setSectionA] = useState({
+        dateOfEvent: "", timeOfEvent: "", whenDiscovered: "",
+        dateIncidentReport: "", residentName: "", residentDiagnosis: "",
+        unit: "", room: "", whereOccurred: "", howDiscovered: "",
+        whoReported: "", reportCompletedBy: "", eventDescription: "",
+        stepsTaken: ""
+      });
+
+      const [sectionB, setSectionB] = useState({
+        items: Array(5).fill(null).map(() => ({ answer: "", whyNot: "", date: "" }))
+      });
+
+      const [sectionC, setSectionC] = useState({
+        initiatedBy: "", dateStarted: "", investigator: ""
+      });
+
+      const [sectionD, setSectionD] = useState({
+        eventType: "Alleged Abuse",
+        interviews: []
+      });
+
+      const [sectionE, setSectionE] = useState({
+        employees: [],
+        description: ""
+      });
+
+      const [sectionF, setSectionF] = useState({
+        rows: Array(11).fill(null).map(() => ({ datetime: "", byWhom: "" }))
+      });
+
+      /* beforeunload */
+      useEffect(() => {
+        const handler = (e) => {
+          e.preventDefault();
+          e.returnValue = "";
+        };
+        window.addEventListener("beforeunload", handler);
+        return () => window.removeEventListener("beforeunload", handler);
+      }, []);
+
+      const showToast = (message) => {
+        setToast({ visible: true, message });
+      };
+
+      const handleCopy = () => {
+        const text = buildClipboardText(investigator, sections, sectionA, sectionB, sectionC, sectionD, sectionE, sectionF);
+        navigator.clipboard.writeText(text).then(() => {
+          showToast("Copied to clipboard!");
+        }).catch(() => {
+          showToast("Failed to copy.");
+        });
+      };
+
+      const handlePrint = () => {
+        window.print();
+      };
+
+      const handleExport = async () => {
+        try {
+          await exportToWord(investigator, sections, sectionA, sectionB, sectionC, sectionD, sectionE, sectionF);
+          showToast("Word document exported!");
+        } catch (err) {
+          console.error(err);
+          showToast("Export failed. Check console.");
+        }
+      };
+
+      return (
+        <div className="max-w-5xl mx-auto p-4 pb-24">
+          {/* Header */}
+          <div className="bg-mdh-blue text-white rounded-lg shadow-lg p-6 mb-6 text-center no-print">
+            <h1 className="text-2xl font-bold">Coffman Nursing Home & Rehabilitation Center</h1>
+            <p className="text-mdh-accent text-lg mt-1">Investigation Summary Form</p>
+          </div>
+
+          {/* Print-only header */}
+          <div className="print-only text-center mb-4">
+            <h1 className="text-xl font-bold">Coffman Nursing Home & Rehabilitation Center</h1>
+            <p className="text-base">Investigation Summary Form</p>
+          </div>
+
+          {/* Investigator Identity */}
+          <div className="bg-white rounded-lg shadow p-5 mb-6">
+            <h2 className="text-lg font-bold text-mdh-blue mb-4 border-b pb-2">Investigator</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <LabelInput
+                label="Name"
+                value={investigator.name}
+                onChange={v => setInvestigator(prev => ({ ...prev, name: v }))}
+                required
+              />
+              <LabelInput
+                label="Position/Title"
+                value={investigator.title}
+                onChange={v => setInvestigator(prev => ({ ...prev, title: v }))}
+                required
+              />
+            </div>
+          </div>
+
+          {/* Section Selector */}
+          <SectionSelector sections={sections} onToggle={toggleSection} />
+
+          {/* Conditional Sections */}
+          {sections.A && <SectionA data={sectionA} setData={setSectionA} />}
+          {sections.B && <SectionB data={sectionB} setData={setSectionB} />}
+          {sections.C && <SectionC data={sectionC} setData={setSectionC} />}
+          {sections.D && <SectionD data={sectionD} setData={setSectionD} />}
+          {sections.E && <SectionE data={sectionE} setData={setSectionE} />}
+          {sections.F && <SectionF data={sectionF} setData={setSectionF} />}
+
+          {/* Print-only interview pages */}
+          {sections.D && sectionD.interviews.map((iv, idx) => (
+            <InterviewPrintView key={idx} interview={iv} eventType={sectionD.eventType} />
+          ))}
+
+          {/* Action Bar */}
+          <div className="fixed bottom-0 left-0 right-0 bg-white border-t shadow-lg p-3 flex justify-center gap-4 z-40 no-print">
+            <button
+              onClick={handleCopy}
+              className="px-6 py-3 bg-mdh-light text-white rounded-lg font-medium hover:bg-mdh-blue transition flex items-center gap-2"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" /></svg>
+              Copy to Clipboard
+            </button>
+            <button
+              onClick={handlePrint}
+              className="px-6 py-3 bg-gray-600 text-white rounded-lg font-medium hover:bg-gray-800 transition flex items-center gap-2"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" /></svg>
+              Print
+            </button>
+            <button
+              onClick={handleExport}
+              className="px-6 py-3 bg-green-600 text-white rounded-lg font-medium hover:bg-green-800 transition flex items-center gap-2"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+              Export to Word
+            </button>
+          </div>
+
+          <Toast message={toast.message} visible={toast.visible} onClose={() => setToast({ visible: false, message: "" })} />
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+  </script>
+</body>
+</html>
