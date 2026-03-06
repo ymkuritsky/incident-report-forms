@@ -31,6 +31,7 @@
       }
     };
   </script>
+  <link href="https://fonts.googleapis.com/css2?family=Dancing+Script:wght@400;700&display=swap" rel="stylesheet">
   <style>
     @media print {
       .no-print { display: none !important; }
@@ -41,6 +42,8 @@
       .print-only { display: none; }
     }
     body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+    .sig-typed { font-family: 'Dancing Script', cursive; font-size: 28px; color: #1a1a6e; }
+    canvas.sig-pad { border: 1px solid #ccc; border-radius: 6px; touch-action: none; cursor: crosshair; background: #fff; }
   </style>
 </head>
 <body class="bg-gray-100 min-h-screen">
@@ -376,6 +379,129 @@
     }
 
     /* ============================================================
+       SIGNATURE PAD COMPONENT
+       ============================================================ */
+    function SignaturePad({ value, onChange }) {
+      const [mode, setMode] = useState(value?.mode || "draw");
+      const [typedName, setTypedName] = useState(value?.typedName || "");
+      const canvasRef = useRef(null);
+      const isDrawing = useRef(false);
+      const hasDrawn = useRef(!!(value?.drawData));
+
+      useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const ctx = canvas.getContext("2d");
+        const rect = canvas.parentElement.getBoundingClientRect();
+        canvas.width = Math.min(rect.width - 2, 500);
+        canvas.height = 120;
+        ctx.lineWidth = 2;
+        ctx.lineCap = "round";
+        ctx.strokeStyle = "#1a1a6e";
+        if (value?.drawData) {
+          const img = new Image();
+          img.onload = () => ctx.drawImage(img, 0, 0);
+          img.src = value.drawData;
+        }
+      }, [mode]);
+
+      const getPos = (e) => {
+        const canvas = canvasRef.current;
+        const rect = canvas.getBoundingClientRect();
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+        return { x: clientX - rect.left, y: clientY - rect.top };
+      };
+
+      const startDraw = (e) => {
+        e.preventDefault();
+        isDrawing.current = true;
+        hasDrawn.current = true;
+        const ctx = canvasRef.current.getContext("2d");
+        const pos = getPos(e);
+        ctx.beginPath();
+        ctx.moveTo(pos.x, pos.y);
+      };
+
+      const draw = (e) => {
+        if (!isDrawing.current) return;
+        e.preventDefault();
+        const ctx = canvasRef.current.getContext("2d");
+        const pos = getPos(e);
+        ctx.lineTo(pos.x, pos.y);
+        ctx.stroke();
+      };
+
+      const endDraw = () => {
+        if (!isDrawing.current) return;
+        isDrawing.current = false;
+        const data = canvasRef.current.toDataURL("image/png");
+        onChange({ mode: "draw", drawData: data, typedName: "" });
+      };
+
+      const clearCanvas = () => {
+        const canvas = canvasRef.current;
+        const ctx = canvas.getContext("2d");
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        hasDrawn.current = false;
+        onChange({ mode: "draw", drawData: "", typedName: "" });
+      };
+
+      const handleTyped = (name) => {
+        setTypedName(name);
+        onChange({ mode: "type", drawData: "", typedName: name });
+      };
+
+      return (
+        <div className="border rounded-lg p-4 bg-gray-50">
+          <div className="flex gap-2 mb-3">
+            <button
+              type="button"
+              onClick={() => { setMode("draw"); onChange({ mode: "draw", drawData: value?.drawData || "", typedName: "" }); }}
+              className={`px-3 py-1 text-xs rounded-full font-medium transition ${mode === "draw" ? "bg-mdh-blue text-white" : "bg-white border text-gray-600 hover:bg-gray-100"}`}
+            >
+              ✏️ Draw Signature
+            </button>
+            <button
+              type="button"
+              onClick={() => { setMode("type"); onChange({ mode: "type", drawData: "", typedName: typedName }); }}
+              className={`px-3 py-1 text-xs rounded-full font-medium transition ${mode === "type" ? "bg-mdh-blue text-white" : "bg-white border text-gray-600 hover:bg-gray-100"}`}
+            >
+              ⌨️ Type Signature
+            </button>
+          </div>
+
+          {mode === "draw" ? (
+            <div>
+              <canvas
+                ref={canvasRef}
+                className="sig-pad w-full"
+                onMouseDown={startDraw} onMouseMove={draw} onMouseUp={endDraw} onMouseLeave={endDraw}
+                onTouchStart={startDraw} onTouchMove={draw} onTouchEnd={endDraw}
+              />
+              <button type="button" onClick={clearCanvas} className="mt-1 text-xs text-red-500 hover:text-red-700">Clear</button>
+            </div>
+          ) : (
+            <div>
+              <input
+                type="text"
+                value={typedName}
+                onChange={e => handleTyped(e.target.value)}
+                placeholder="Type your full name"
+                className="w-full border rounded px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-mdh-light"
+              />
+              {typedName && (
+                <div className="mt-2 p-3 bg-white border rounded text-center">
+                  <span className="sig-typed">{typedName}</span>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    /* ============================================================
        INTERVIEW MODAL
        ============================================================ */
     function InterviewModal({ interview, eventType, onSave, onClose }) {
@@ -395,6 +521,9 @@
         answers: {},
         additionalNotes: "",
         otherQuestions: "",
+        intervieweeSignature: null,
+        witnessSignature: null,
+        interviewerSignature: null,
         ...interview
       }));
 
@@ -511,9 +640,26 @@
 
               {/* Signature attestation */}
               <div className="border-t pt-4">
-                <p className="text-xs text-gray-500 italic mb-2">
+                <div className="bg-gray-800 text-white text-xs px-3 py-2 rounded mb-4 font-medium">
                   My signature below indicates that I have read and understood the statement, and that it is true, accurate and complete.
-                </p>
+                </div>
+
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-1">Interviewee Signature</label>
+                    <SignaturePad value={form.intervieweeSignature} onChange={v => u('intervieweeSignature', v)} />
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-1">Witness Signature</label>
+                      <SignaturePad value={form.witnessSignature} onChange={v => u('witnessSignature', v)} />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-1">Interviewer Signature</label>
+                      <SignaturePad value={form.interviewerSignature} onChange={v => u('interviewerSignature', v)} />
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -845,25 +991,43 @@
           <table className="w-full border-collapse text-xs">
             <tbody>
               <tr>
-                <td className="border p-4 h-10" colSpan={2}></td>
+                <td className="border p-2 h-16" colSpan={2}>
+                  {iv.intervieweeSignature?.drawData ? (
+                    <img src={iv.intervieweeSignature.drawData} alt="Interviewee signature" style={{maxHeight:'50px'}} />
+                  ) : iv.intervieweeSignature?.typedName ? (
+                    <span className="sig-typed">{iv.intervieweeSignature.typedName}</span>
+                  ) : null}
+                </td>
               </tr>
               <tr>
-                <td className="border p-2"><strong>Signature of Witness:</strong></td>
+                <td className="border p-2"><strong>Signature of Witness:</strong>
+                  {iv.witnessSignature?.drawData ? (
+                    <img src={iv.witnessSignature.drawData} alt="Witness signature" style={{maxHeight:'35px', display:'inline-block', marginLeft:'8px'}} />
+                  ) : iv.witnessSignature?.typedName ? (
+                    <span className="sig-typed" style={{marginLeft:'8px'}}>{iv.witnessSignature.typedName}</span>
+                  ) : null}
+                </td>
                 <td className="border p-2"><strong>Date:</strong></td>
               </tr>
               <tr className="bg-black text-white">
-                <td className="border p-2"><strong>Name of Person being interviewed:</strong></td>
+                <td className="border p-2"><strong>Name of Person being interviewed:</strong> {iv.intervieweeName}</td>
                 <td className="border p-2"><strong>Date:</strong></td>
               </tr>
               <tr>
                 <td className="border p-4 h-8" colSpan={2}></td>
               </tr>
               <tr className="bg-black text-white">
-                <td className="border p-2"><strong>Name of Interviewer:</strong></td>
+                <td className="border p-2"><strong>Name of Interviewer:</strong> {iv.interviewerName}</td>
                 <td className="border p-2"><strong>Date:</strong></td>
               </tr>
               <tr>
-                <td className="border p-4 h-8" colSpan={2}></td>
+                <td className="border p-2 h-16" colSpan={2}>
+                  {iv.interviewerSignature?.drawData ? (
+                    <img src={iv.interviewerSignature.drawData} alt="Interviewer signature" style={{maxHeight:'50px'}} />
+                  ) : iv.interviewerSignature?.typedName ? (
+                    <span className="sig-typed">{iv.interviewerSignature.typedName}</span>
+                  ) : null}
+                </td>
               </tr>
             </tbody>
           </table>
@@ -1014,6 +1178,13 @@
       const BOLD_TEXT = { bold: true, size: 18, font: "Arial" };
       const BORDER_SINGLE = { style: BorderStyle.SINGLE, size: 1, color: "000000" };
       const CELL_BORDERS = { top: BORDER_SINGLE, bottom: BORDER_SINGLE, left: BORDER_SINGLE, right: BORDER_SINGLE };
+
+      function sigText(sig) {
+        if (!sig) return "";
+        if (sig.mode === "type" && sig.typedName) return sig.typedName;
+        if (sig.mode === "draw" && sig.drawData) return "[Signed]";
+        return "";
+      }
 
       function makeHeaderCell(text, colspan) {
         return new TableCell({
@@ -1271,23 +1442,29 @@
                   makeHeaderCell("My signature below indicates that I have read and understood the statement, and that it is true, accurate and complete.", 2)
                 ]
               }),
-              /* Row 9: Blank signature */
+              /* Row 9: Interviewee signature */
               new TableRow({
                 children: [
-                  makeCell(p([new TextRun({ ...SMALL_TEXT, text: "" })]), 2)
+                  makeCell(p([new TextRun({
+                    ...SMALL_TEXT, text: sigText(iv.intervieweeSignature),
+                    italics: true, font: "Segoe Script"
+                  })]), 2)
                 ]
               }),
               /* Row 10: Signature of Witness | Date */
               new TableRow({
                 children: [
-                  makeCell(p([new TextRun({ ...BOLD_TEXT, text: "Signature of Witness:" })])),
+                  makeCell(p([
+                    new TextRun({ ...BOLD_TEXT, text: "Signature of Witness: " }),
+                    new TextRun({ ...SMALL_TEXT, text: sigText(iv.witnessSignature), italics: true, font: "Segoe Script" })
+                  ])),
                   makeCell(p([new TextRun({ ...BOLD_TEXT, text: "Date:" })]))
                 ]
               }),
               /* Row 11: Black - Name of Person | Date */
               new TableRow({
                 children: [
-                  makeCell(p([new TextRun({ ...WHITE_BOLD, text: "Name of Person being interviewed:" })]), undefined, BLACK_SHADING),
+                  makeCell(p([new TextRun({ ...WHITE_BOLD, text: "Name of Person being interviewed: " }), new TextRun({ ...WHITE_BOLD, text: iv.intervieweeName || "" })]), undefined, BLACK_SHADING),
                   makeCell(p([new TextRun({ ...WHITE_BOLD, text: "Date:" })]), undefined, BLACK_SHADING)
                 ]
               }),
@@ -1300,14 +1477,17 @@
               /* Row 13: Black - Name of Interviewer | Date */
               new TableRow({
                 children: [
-                  makeCell(p([new TextRun({ ...WHITE_BOLD, text: "Name of Interviewer:" })]), undefined, BLACK_SHADING),
+                  makeCell(p([new TextRun({ ...WHITE_BOLD, text: "Name of Interviewer: " }), new TextRun({ ...WHITE_BOLD, text: iv.interviewerName || "" })]), undefined, BLACK_SHADING),
                   makeCell(p([new TextRun({ ...WHITE_BOLD, text: "Date:" })]), undefined, BLACK_SHADING)
                 ]
               }),
-              /* Row 14: Blank */
+              /* Row 14: Interviewer signature */
               new TableRow({
                 children: [
-                  makeCell(p([new TextRun({ ...SMALL_TEXT, text: "" })]), 2)
+                  makeCell(p([new TextRun({
+                    ...SMALL_TEXT, text: sigText(iv.interviewerSignature),
+                    italics: true, font: "Segoe Script"
+                  })]), 2)
                 ]
               })
             ]
