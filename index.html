@@ -303,6 +303,7 @@ The injury is suspicious because of the extent of the injury or the location of 
       {
         id: 1, title: "Additional/Updated Information",
         fields: [
+          { id: "fu_resident_name", label: "Resident Name", type: "text" },
           { id: "additional_info", label: "Brief description of any additional information and/or updates, if applicable", type: "textarea" },
           { id: "additional_outcomes", label: "Describe any additional outcomes to the resident(s) \u2014 physical and mental harm", type: "textarea" },
           { id: "reported_to_rep", label: "Was the allegation reported to the resident representative?", type: "radio", options: ["Yes", "No"] },
@@ -414,7 +415,7 @@ The injury is suspicious because of the extent of the injury or the location of 
         };
       }
       return { ...base,
-        additional_info: "", additional_outcomes: "",
+        fu_resident_name: "", additional_info: "", additional_outcomes: "",
         reported_to_rep: "", reported_to_rep_date: "", reported_to_rep_time: "",
         reported_to_other_agency: "", roa_agency: "", roa_date: "", roa_time: "", roa_outcome: "",
         investigation_steps: "",
@@ -1297,6 +1298,7 @@ The injury is suspicious because of the extent of the injury or the location of 
       const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell,
               AlignmentType, BorderStyle, WidthType, ShadingType, convertInchesToTwip } = lib;
 
+      const COL_W = 4778; // each column in dxa
       const TABLE_W = 9556;
 
       const allBorders = {
@@ -1306,9 +1308,10 @@ The injury is suspicious because of the extent of the injury or the location of 
         right: { style: BorderStyle.SINGLE, size: 1 },
       };
 
-      // Helper: single-column row (no merge needed since single column)
-      function singleRow(paragraphs, shading) {
+      // Helper: merged (full-width) cell row — spans 2 columns
+      function mergedRow(paragraphs, shading) {
         const cellOpts = {
+          columnSpan: 2,
           borders: allBorders,
           children: Array.isArray(paragraphs) ? paragraphs : [paragraphs],
         };
@@ -1316,22 +1319,40 @@ The injury is suspicious because of the extent of the injury or the location of 
         return new TableRow({ children: [new TableCell(cellOpts)] });
       }
 
+      // Helper: split row (two separate cells)
+      function splitRow(label1, value1, label2, value2, shading) {
+        const makeCell = (label, value) => {
+          const cellOpts = {
+            borders: allBorders,
+            children: [new Paragraph({
+              children: [
+                new TextRun({ text: label + " ", bold: true, size: 24, font: "Times New Roman" }),
+                new TextRun({ text: value || "", size: 24, font: "Times New Roman" }),
+              ],
+            })],
+          };
+          if (shading) cellOpts.shading = { fill: shading, type: ShadingType.CLEAR };
+          return new TableCell(cellOpts);
+        };
+        return new TableRow({ children: [makeCell(label1, value1), makeCell(label2, value2)] });
+      }
+
       function sectionHeader(text) {
-        return singleRow(
+        return mergedRow(
           new Paragraph({ children: [new TextRun({ text, bold: true, size: 28, font: "Times New Roman" })] }),
           "FFC000"
         );
       }
 
       function subHeader(text) {
-        return singleRow(
+        return mergedRow(
           new Paragraph({ children: [new TextRun({ text, bold: true, size: 24, font: "Times New Roman" })] }),
           "F2F2F2"
         );
       }
 
       function dataRow(label, value) {
-        return singleRow(
+        return mergedRow(
           new Paragraph({
             children: [
               new TextRun({ text: label + ": ", bold: true, size: 24, font: "Times New Roman" }),
@@ -1342,7 +1363,7 @@ The injury is suspicious because of the extent of the injury or the location of 
       }
 
       function dataRowLong(label, value) {
-        return singleRow([
+        return mergedRow([
           new Paragraph({ children: [new TextRun({ text: label, bold: true, size: 24, font: "Times New Roman" })] }),
           new Paragraph({ children: [new TextRun({ text: value || "", size: 24, font: "Times New Roman" })], spacing: { before: 60 } }),
         ]);
@@ -1357,7 +1378,13 @@ The injury is suspicious because of the extent of the injury or the location of 
 
       const rows = [];
 
-      // Row 0: Instructions header
+      // Row 0: Provider Name | Resident Name (split, gray)
+      rows.push(splitRow("Provider Name", formData.facility_name || "", "Resident Name", formData.fu_resident_name || "", "F2F2F2"));
+
+      // Row 1: Empty data row for entries
+      rows.push(splitRow("", "", "", ""));
+
+      // Row 2: Instructions header
       rows.push(sectionHeader("Instructions for Facility Reported Incidents Follow-Up Investigation Report"));
 
       // Row 1: Submitting sub-header
@@ -1367,7 +1394,7 @@ The injury is suspicious because of the extent of the injury or the location of 
       const instructionParagraphs = FOLLOWUP_INSTRUCTION_TEXT.split("\n").map(line =>
         new Paragraph({ children: [new TextRun({ text: line, size: 24, font: "Times New Roman" })], spacing: { after: 60 } })
       );
-      rows.push(singleRow(instructionParagraphs));
+      rows.push(mergedRow(instructionParagraphs));
 
       // Row 3: Section 1 header
       rows.push(sectionHeader("1. Additional/Updated Information Related to the Reported Incident:"));
@@ -1497,7 +1524,7 @@ The injury is suspicious because of the extent of the injury or the location of 
       ));
 
       const table = new Table({
-        columnWidths: [TABLE_W],
+        columnWidths: [COL_W, COL_W],
         rows: rows,
         width: { size: TABLE_W, type: WidthType.DXA },
       });
