@@ -1051,11 +1051,13 @@ The injury is suspicious because of the extent of the injury or the location of 
       );
       rows.push(mergedRow(instructionParagraphs));
 
-      // Row 3: Initial Report header
-      rows.push(sectionHeader("Initial Report"));
+      // Row 3: Initial Report header (F2F2F2 gray, NOT section header)
+      rows.push(subHeader("Initial Report"));
 
-      // Row 4: Important note sub-header
-      rows.push(subHeader("It is important that the facility provide as much information as possible, to the best of its knowledge at the time of submission of this report."));
+      // Row 4: Important note (white/auto, NOT sub-header)
+      rows.push(mergedRow(
+        new Paragraph({ children: [new TextRun({ text: "It is important that the facility provide as much information as possible, to the best of its knowledge, at the time of submission of this report.", size: 24, font: "Times New Roman" })] })
+      ));
 
       // Row 5: Section 1 header
       rows.push(sectionHeader("1. Facility Information"));
@@ -1085,7 +1087,7 @@ The injury is suspicious because of the extent of the injury or the location of 
         return (checked ? "\u2611 " : "\u2610 ") + opt.label;
       }).join("\n");
       const typesParagraphs = [
-        new Paragraph({ children: [new TextRun({ text: "Select all that apply:", bold: true, size: 24, font: "Times New Roman" })], spacing: { after: 60 } }),
+        new Paragraph({ children: [new TextRun({ text: "Select all that apply to the reporting incident.", bold: true, size: 24, font: "Times New Roman" })], spacing: { after: 60 } }),
       ];
       ALLEGATION_OPTIONS.forEach(opt => {
         const checked = (formData.allegation_types || []).includes(opt.id);
@@ -1106,16 +1108,16 @@ The injury is suspicious because of the extent of the injury or the location of 
       });
 
       // Row 17: Section 3 header
-      rows.push(sectionHeader("3. Information about when the Facility became aware of the alleged incident"));
+      rows.push(sectionHeader("3. Information about when the Facility became aware of the incident"));
 
       // Row 18: Staff awareness
-      rows.push(dataRow("Date/Time staff first became aware of the incident",
+      rows.push(dataRow("Date/Time/Name of when staff became aware of the incident",
         formatDateDisplay(formData.staff_aware_date) + " " + formatTimeDisplay(formData.staff_aware_time) +
         " \u2014 Name: " + (formData.staff_aware_name || "")
       ));
 
       // Row 19: Admin notification
-      rows.push(dataRow("Date/Time administrator was notified and by whom",
+      rows.push(dataRow("Date/Time administrator was notified of the incident and by whom",
         formatDateDisplay(formData.admin_notified_date) + " " + formatTimeDisplay(formData.admin_notified_time) +
         " \u2014 By: " + (formData.admin_notifier || "")
       ));
@@ -1154,13 +1156,13 @@ The injury is suspicious because of the extent of the injury or the location of 
       rows.push(sectionHeader("6. Allegation Details"));
 
       // Row 31: Sub-header
-      rows.push(subHeader("Provide a brief description of the alleged incident. Include the following information:"));
+      rows.push(subHeader("Provide a brief description of the specific allegation, including but not limited to, identifying:"));
 
       // Row 32
-      rows.push(dataRow("Who made the allegation (unless anonymously), and their relationship to the alleged victim", formData.who_alleged));
+      rows.push(dataRow("Who made the allegation (unless it was reported anonymously), and their relationship to the alleged victim", formData.who_alleged));
 
       // Row 33
-      rows.push(dataRowLong("What was reported and to whom or which agency/entity", formData.what_reported));
+      rows.push(dataRowLong("What was reported and to whom or which agency/entity:", formData.what_reported));
 
       // Row 34
       rows.push(dataRow("Date and time when the alleged incident occurred",
@@ -1171,7 +1173,7 @@ The injury is suspicious because of the extent of the injury or the location of 
       rows.push(dataRow("Where the alleged incident occurred", formData.incident_location));
 
       // Row 36: physical harm sub-header
-      rows.push(subHeader("Provide details of any physical harm and/or changes in the resident\u2019s behavior:"));
+      rows.push(subHeader("Provide details of any physical harm, pain, or mental anguish to the alleged victim(s), including but not limited to:"));
 
       // Row 37
       rows.push(dataRow("Whether serious bodily injury occurred, if known", formData.serious_injury || ""));
@@ -1180,13 +1182,21 @@ The injury is suspicious because of the extent of the injury or the location of 
       }
 
       // Row 38
-      rows.push(dataRowLong("Describe any type of injury (bruise, scratch, laceration, puncture wound, fracture, bleeding, redness on the skin, etc.)", formData.injury_description));
+      rows.push(dataRowLong("Describe any type of injury (such as a bruise, scratch, laceration, puncture wound, fracture, bleeding, redness on the skin, etc.):", formData.injury_description));
 
       // Row 39
-      rows.push(dataRowLong("Describe any changes in the resident\u2019s behavior (crying, fear, cowering, anger, withdrawal, difficulty sleeping, etc.)", formData.behavioral_changes));
+      rows.push(dataRowLong("Describe any changes in the resident\u2019s behavior that indicate something different from the resident\u2019s normal baseline such as crying, expressions or displays of fear, cowering, anger, withdrawal, difficulty sleeping, etc.:", formData.behavioral_changes));
 
-      // Row 40: Protective steps instructions
-      rows.push(subHeader("All steps taken immediately to ensure resident(s) are protected. Address the following as applicable: immediate assessment and medical treatment; whether victim feels safe and room relocation/supervision taken; notification to physician and resident representative; removal of perpetrator access; other preventive measures."));
+      // Row 40: Protective steps instructions (full official text)
+      rows.push(mergedRow([
+        new Paragraph({ children: [new TextRun({ text: "Provide all steps taken immediately to ensure resident(s) are protected. Such steps could include:", bold: true, size: 24, font: "Times New Roman" })], spacing: { after: 40 } }),
+        new Paragraph({ children: [new TextRun({ text: "Immediate assessment of the alleged victim and provision of medical treatment as necessary;", bold: true, size: 24, font: "Times New Roman" })], spacing: { after: 40 } }),
+        new Paragraph({ children: [new TextRun({ text: "Evaluation of whether the alleged victim feels safe and if he/she does not feel safe, taking immediate steps to protect the resident, such as a room relocation and/or increased supervision;", bold: true, size: 24, font: "Times New Roman" })], spacing: { after: 40 } }),
+        new Paragraph({ children: [new TextRun({ text: "Immediate notification to the alleged perpetrator\u2019s (if a resident) and/or the alleged victim\u2019s physician and the resident representative when there is injury, a significant change in condition or status, and/or a need to alter treatment significantly;", bold: true, size: 24, font: "Times New Roman" })], spacing: { after: 40 } }),
+        new Paragraph({ children: [new TextRun({ text: "If the alleged perpetrator is facility staff, removal of the alleged perpetrator\u2019s access to the alleged victim and other residents and assurance that ongoing safety and protection is provided for the alleged victim and other residents;", bold: true, size: 24, font: "Times New Roman" })], spacing: { after: 40 } }),
+        new Paragraph({ children: [new TextRun({ text: "If the alleged perpetrator is a resident or visitor, removal of the alleged perpetrator\u2019s access to the alleged victim and, as appropriate, other residents and assurance that ongoing safety and protection is provided for the alleged victim and other residents;", bold: true, size: 24, font: "Times New Roman" })], spacing: { after: 40 } }),
+        new Paragraph({ children: [new TextRun({ text: "Other measures the facility is taking to prevent further potential abuse, neglect, exploitation, and misappropriation of resident property.", bold: true, size: 24, font: "Times New Roman" })] }),
+      ], "F2F2F2"));
 
       // Row 41
       rows.push(dataRowLong("All steps taken immediately to ensure resident(s) are protected", formData.protective_steps));
@@ -1215,13 +1225,13 @@ The injury is suspicious because of the extent of the injury or the location of 
 
       if (formData.law_enforcement === "Yes") {
         // Row 47
-        rows.push(dataRow("Name of the law enforcement agency notified and contact person", formData.le_agency));
+        rows.push(dataRow("If yes, name of the law enforcement agency notified and contact person", formData.le_agency));
         // Row 48
         rows.push(dataRow("Name of reporting individual(s) and position(s)", formData.le_reporter));
         // Row 49
         rows.push(dataRow("Date and time (including am/pm) the report was made, report number if available",
           formatDateDisplay(formData.le_date) + " " + formatTimeDisplay(formData.le_time) +
-          (formData.le_report_number ? " \u2014 Report #" + formData.le_report_number : "")
+          (formData.le_report_number ? ", Report #" + formData.le_report_number : "")
         ));
       }
 
@@ -1229,11 +1239,11 @@ The injury is suspicious because of the extent of the injury or the location of 
       rows.push(sectionHeader("9. Notification to Other Agencies"));
 
       // Row 51
-      rows.push(dataRow("Were other agencies notified (e.g., nurse aide registry, professional licensing board)?", formData.other_agency || ""));
+      rows.push(dataRow("Were other agencies notified?", formData.other_agency || ""));
 
       if (formData.other_agency === "Yes") {
         // Row 52
-        rows.push(dataRow("If YES, which other agency and who", formData.oa_name));
+        rows.push(dataRow("If YES, which other agency and who at that agency was notified of the allegation (ex: Adult Protective Services, Ombudsman)", formData.oa_name));
         // Row 53
         rows.push(dataRow("Date and Time (include am/pm) the report was made",
           formatDateDisplay(formData.oa_date) + " " + formatTimeDisplay(formData.oa_time)
@@ -1247,15 +1257,15 @@ The injury is suspicious because of the extent of the injury or the location of 
       rows.push(sectionHeader("10. Submission Report"));
 
       // Row 55
-      rows.push(dataRow("Name and title of person submitting report", formData.submitter_name));
+      rows.push(dataRow("Name/title of person submitting report", formData.submitter_name));
 
       // Row 56
-      rows.push(dataRow("Date and time (am/pm) report was submitted",
+      rows.push(dataRow("Date/time (am/pm) report was submitted",
         formatDateDisplay(formData.submission_date) + " " + formatTimeDisplay(formData.submission_time)
       ));
 
       // Row 57
-      rows.push(dataRow("Contact number and E-mail address",
+      rows.push(dataRow("Contact number and E-mail address of person submitting report for follow up",
         (formData.submitter_phone || "") + " " + (formData.submitter_email || "")
       ));
 
@@ -1348,10 +1358,10 @@ The injury is suspicious because of the extent of the injury or the location of 
       const rows = [];
 
       // Row 0: Instructions header
-      rows.push(sectionHeader("Instructions for Facility Reported Incident Follow-Up Investigation Report"));
+      rows.push(sectionHeader("Instructions for Facility Reported Incidents Follow-Up Investigation Report"));
 
       // Row 1: Submitting sub-header
-      rows.push(subHeader("Submitting a Facility Reported Incident Follow-Up Investigation Report"));
+      rows.push(subHeader("Submitting a Facility Report Incident Report"));
 
       // Row 2: Instruction text
       const instructionParagraphs = FOLLOWUP_INSTRUCTION_TEXT.split("\n").map(line =>
@@ -1360,13 +1370,13 @@ The injury is suspicious because of the extent of the injury or the location of 
       rows.push(singleRow(instructionParagraphs));
 
       // Row 3: Section 1 header
-      rows.push(sectionHeader("1. Additional/Updated Information"));
+      rows.push(sectionHeader("1. Additional/Updated Information Related to the Reported Incident:"));
 
       // Row 4: Instructions
-      rows.push(subHeader("Please include any updates to information provided in the initial report."));
+      rows.push(subHeader("Provide a brief description of any additional information and/or updates, if applicable."));
 
       // Row 5: Additional outcomes
-      rows.push(dataRowLong("Describe any additional outcomes to the resident(s) \u2014 physical and mental harm", formData.additional_outcomes));
+      rows.push(dataRowLong("Describe any additional outcomes to the resident(s), identifying/describing any physical and mental harm:", formData.additional_outcomes));
 
       // Additional info
       if (formData.additional_info) {
@@ -1374,7 +1384,7 @@ The injury is suspicious because of the extent of the injury or the location of 
       }
 
       // Row 6: Reported to representative
-      rows.push(dataRow("Whether the allegation was reported to the resident representative",
+      rows.push(dataRowLong("Whether the allegation was reported to the resident representative, and if so, date/time:",
         formData.reported_to_rep === "Yes"
           ? "Yes \u2014 " + formatDateDisplay(formData.reported_to_rep_date) + " " + formatTimeDisplay(formData.reported_to_rep_time)
           : (formData.reported_to_rep || "")
@@ -1387,98 +1397,85 @@ The injury is suspicious because of the extent of the injury or the location of 
           formatDateDisplay(formData.roa_date) + " " + formatTimeDisplay(formData.roa_time);
         if (formData.roa_outcome) agencyText += " \u2014 Outcome: " + formData.roa_outcome;
       }
-      rows.push(dataRow("Whether the allegation was reported to another agency", agencyText));
+      rows.push(dataRowLong("Whether the allegation was reported to another agency (e.g., nurse aide registry or professional licensing boards if staff to resident abuse), and if so, which agency, date/time, and outcome if they conducted an investigation:", agencyText));
 
       // Row 8: Section 2 header
-      rows.push(sectionHeader("2. Steps Taken to Investigate the Alleged Incident"));
+      rows.push(sectionHeader("2. Steps Taken to Investigate the Allegation:"));
 
       // Row 9: Instructions
-      rows.push(subHeader("Provide a detailed summary of ALL steps taken to investigate the allegation. Include interviews with each of the following:"));
+      rows.push(subHeader("Provide a detailed summary of ALL steps taken to investigate allegation."));
 
-      // Row 10: Investigation summary
-      rows.push(dataRowLong("Detailed summary of all investigation steps", formData.investigation_steps));
+      // Row 10: Interview - victim
+      rows.push(dataRowLong("Summary of interview(s) with the alleged victim and/or the victim\u2019s responsible party, if applicable. Indicate any visual cues from the resident of psychosocial distress and harm and the resident\u2019s perspective on incurred psychological harm and distress:", formData.interview_victim));
 
-      // Row 11: Interview - victim
-      rows.push(dataRowLong("Interview with alleged victim and/or victim\u2019s responsible party", formData.interview_victim));
+      // Row 11: Interview - witnesses
+      rows.push(dataRowLong("Summary of interview(s) with witness(es), what the individual observed or knowledge of the alleged incident or injury:", formData.interview_witnesses));
 
-      // Row 12: Interview - witnesses
-      rows.push(dataRowLong("Interview with witness(es)", formData.interview_witnesses));
+      // Row 12: Interview - perpetrator
+      rows.push(dataRowLong("Summary of interview(s) with the alleged perpetrator(s) (staff, resident, visitor, contractor, etc.):", formData.interview_perpetrator));
 
-      // Row 13: Interview - perpetrator
-      rows.push(dataRowLong("Interview with alleged perpetrator(s)", formData.interview_perpetrator));
+      // Row 13: Interview - other residents
+      rows.push(dataRowLong("Summary of interview(s) with other residents who may have had contact with the alleged perpetrator:", formData.interview_other_residents));
 
-      // Row 14: Interview - other residents
-      rows.push(dataRowLong("Interview with other residents who may have had contact with alleged perpetrator", formData.interview_other_residents));
+      // Row 14: Interview - location staff
+      rows.push(dataRowLong("Summary of interview(s) with staff responsible for oversight and supervision of the location where the alleged victim resides:", formData.interview_location_staff));
 
-      // Row 15: Interview - location staff
-      rows.push(dataRowLong("Interview with staff responsible for oversight/supervision of victim\u2019s location", formData.interview_location_staff));
+      // Row 15: Interview - perpetrator supervisor
+      rows.push(dataRowLong("Summary of interview(s) with staff responsible for oversight and supervision of the alleged perpetrator, if staff or a resident:", formData.interview_perp_supervisor));
 
-      // Row 16: Interview - perpetrator supervisor
-      rows.push(dataRowLong("Interview with staff responsible for oversight/supervision of alleged perpetrator", formData.interview_perp_supervisor));
+      // Row 16: Clinical records
+      rows.push(dataRowLong("Provide summary information from the investigation related to the incident from the resident\u2019s clinical record, such as relevant portions of the RAI, the resident\u2019s care plan, nurses\u2019 notes, social services note, lab reports, x-ray reports, physician or other practitioner reports or reports from other disciplines that are related to the incident. If a resident to resident altercation occurred, provide any relevant details that may have caused the alleged perpetrator\u2019s behavior, such as habits, routines, medications, diagnosis, how long he/she may have lived at the building, or BIMS score.", formData.clinical_records));
 
-      // Row 17: Clinical records + other documents
-      rows.push(dataRowLong("Summary of relevant clinical record information", formData.clinical_records));
-      rows.push(dataRowLong("Summary of other documents obtained within the 5-business-day timeframe", formData.other_documents));
+      // Row 17: Other documents
+      rows.push(dataRowLong("If available within the five business day timeframe, provide summary information of other documents obtained, such as hospital/medical progress notes/orders and discharge summaries, law enforcement reports, and death reports as applicable:", formData.other_documents));
 
       // Row 18: Section 3 header
       rows.push(sectionHeader("3. Conclusion"));
 
       // Row 19: Instructions
-      rows.push(subHeader("Indicate the finding/conclusion of the investigation."));
+      rows.push(subHeader("Provide a brief description of the conclusion of the investigation and indicate if findings were: [Note: For incidents reported as injuries of unknown source, indicate if the injury resulted from abuse or neglect, based on evidence from the investigation.]"));
 
       // Row 20: Verified
-      if (formData.conclusion_finding === "Verified") {
-        rows.push(dataRow("Finding", "Verified"));
-        rows.push(dataRowLong("Evidence that verified the allegation", formData.conclusion_verified));
-      }
+      rows.push(dataRowLong("Verified \u2014 The allegation was verified by evidence collected during the investigation. Indicate if the allegation was verified by evidence collected during the investigation.",
+        formData.conclusion_finding === "Verified" ? (formData.conclusion_verified || "") : ""
+      ));
 
       // Row 21: Not Verified
-      if (formData.conclusion_finding === "Not Verified") {
-        rows.push(dataRow("Finding", "Not Verified"));
-        rows.push(dataRowLong("Why the allegation could not be verified", formData.conclusion_not_verified));
-      }
+      rows.push(dataRowLong("Not Verified \u2014 The allegation was refuted by evidence collected during the investigation. Indicate and describe why the allegation was unable to be verified during the investigation.",
+        formData.conclusion_finding === "Not Verified" ? (formData.conclusion_not_verified || "") : ""
+      ));
 
       // Row 22: Inconclusive
-      if (formData.conclusion_finding === "Inconclusive") {
-        rows.push(dataRow("Finding", "Inconclusive"));
-        rows.push(dataRowLong("How this determination was reached", formData.conclusion_inconclusive));
-      }
-
-      if (!formData.conclusion_finding) {
-        rows.push(dataRow("Finding", ""));
-      }
-
-      // Injury of unknown source
-      rows.push(dataRowLong("For injuries of unknown source: Did the investigation determine whether the injury resulted from abuse or neglect?", formData.injury_abuse_neglect));
+      rows.push(dataRowLong("Inconclusive\u2014 The allegation could not be verified or refuted because there was insufficient information to determine whether or not the allegation had occurred. If this was identified as inconclusive, indicate and describe how this was determined.",
+        formData.conclusion_finding === "Inconclusive" ? (formData.conclusion_inconclusive || "") : ""
+      ));
 
       // Row 23: Section 4 header
       rows.push(sectionHeader("4. Corrective Action(s) Taken"));
 
       // Row 24: Instructions
-      rows.push(subHeader("Describe any corrective actions taken as a result of the investigation."));
+      rows.push(subHeader("Provide in detail a summary of all corrective action(s) taken."));
 
       // Row 25
-      rows.push(dataRowLong("Describe any action(s) taken as a result of the investigation", formData.corrective_actions));
+      rows.push(dataRowLong("Describe any action(s) taken as a result of the investigation or allegation:", formData.corrective_actions));
 
       // Row 26
-      rows.push(dataRowLong("Describe the plan for oversight of implementation", formData.corrective_oversight));
+      rows.push(dataRowLong("Describe the plan for oversight of implementation of corrective action, if the allegation is verified:", formData.corrective_oversight));
 
-      // Row 27: Counseling (conditional)
-      if (formData.conclusion_finding === "Verified") {
-        rows.push(dataRowLong("Counseling or interventions planned/implemented to assist the resident", formData.corrective_counseling));
-      }
+      // Row 27: Counseling
+      rows.push(dataRowLong("As a result of a verified finding of abuse, such as physical, sexual or mental abuse, identify counseling or other interventions planned and implemented to assist the resident:", formData.corrective_counseling || ""));
 
       // Row 28
-      rows.push(dataRowLong("Systemic corrections (staffing patterns, policies, training)", formData.corrective_systemic));
+      rows.push(dataRowLong("If systemic actions (e.g., changes to facility staffing patterns, changes in facility policies, training) were identified that require correction, identify the steps that have been taken to address the systems:", formData.corrective_systemic));
 
       // Row 29
-      rows.push(dataRowLong("Law enforcement/agency status", formData.corrective_le_status));
+      rows.push(dataRowLong("If the allegation was reported to law enforcement or another state agency, where applicable and if available, what is the status or provide conclusions of their investigation:", formData.corrective_le_status));
 
       // Row 30: Section 5 header
       rows.push(sectionHeader("5. Facility Investigator"));
 
       // Row 31: Instructions
-      rows.push(subHeader("Identify the person(s) who conducted the investigation."));
+      rows.push(subHeader("Provide the name of the facility individual who had the primary responsibility for conducting the investigation."));
 
       // Row 32
       rows.push(dataRow("Name of person(s) investigating allegation", formData.investigator_name));
@@ -1490,12 +1487,12 @@ The injury is suspicious because of the extent of the injury or the location of 
       rows.push(dataRow("Name of administrator/designee", formData.fu_submitter_name));
 
       // Row 35
-      rows.push(dataRow("Date and time of submission",
+      rows.push(dataRow("Date/time of submission",
         formatDateDisplay(formData.fu_submission_date) + " " + formatTimeDisplay(formData.fu_submission_time)
       ));
 
       // Row 36
-      rows.push(dataRow("Contact number and E-mail address",
+      rows.push(dataRow("Contact number and E-mail address for follow up",
         (formData.fu_submitter_phone || "") + " " + (formData.fu_submitter_email || "")
       ));
 
