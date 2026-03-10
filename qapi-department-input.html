@@ -49,15 +49,18 @@
     .trend-up { color: #27ae60; }
     .trend-down { color: #e74c3c; }
     .trend-flat { color: #f39c12; }
-    @media print {
-      .no-print { display: none !important; }
-      body { font-size: 9pt; }
-    }
+    @media print { .no-print { display: none !important; } body { font-size: 9pt; } }
     .status-badge { display: inline-block; padding: 2px 8px; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; }
     .status-met { background: #d5f5e3; color: #1e8449; }
     .status-not-met { background: #fadbd8; color: #c0392b; }
     .status-track { background: #fef9e7; color: #b7950b; }
     .status-na { background: #eaecee; color: #566573; }
+    .spinner { border: 3px solid #e5e7eb; border-top: 3px solid #2980b9; border-radius: 50%; width: 24px; height: 24px; animation: spin 0.8s linear infinite; display: inline-block; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .toast { position: fixed; bottom: 24px; right: 24px; padding: 12px 20px; border-radius: 8px; color: white; font-weight: 600; font-size: 0.9rem; z-index: 9999; animation: slideUp 0.3s ease; }
+    .toast-success { background: #27ae60; }
+    .toast-error { background: #e74c3c; }
+    @keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
   </style>
 </head>
 <body class="bg-gray-50 text-gray-900">
@@ -67,53 +70,44 @@
     const { useState, useEffect, useCallback, useMemo, useRef } = React;
 
     /* ==============================================================
-       DEPARTMENT DATA — all 12 departments from Coffman Workbook
+       FALLBACK DEPARTMENT DATA (used when Google Sheet not connected)
+       Position titles only — no individual names
        ============================================================== */
 
     const FACILITY = "Coffman Nursing Home & Rehabilitation Center";
 
-    const DEPARTMENTS = [
-      {
-        id: "DON",
-        label: "Director of Nursing",
-        title: "COFFMAN QAPI  |  DIRECTOR OF NURSING  |  MONTHLY INPUT FORM",
-        deptHead: "Angela Davis, RN",
-        extension: "x115",
-        dataSources: "PCC incidents, 24-hr report, CASPER QMs. Use rate per 1,000 occupied bed days where possible.",
+    const FALLBACK_DEPARTMENTS = {
+      "Director of Nursing": {
+        name: "Director of Nursing", dataSources: "PCC incidents, 24-hr report, CASPER QMs.",
         kpis: [
           { metric: "5-Star Overall Rating", threshold: "Goal: 3+" },
           { metric: "5-Star QM Rating", threshold: "Goal: 3+" },
           { metric: "5-Star Health Inspection Rating", threshold: "Goal: 3+" },
-          { metric: "Total Falls (count)", threshold: null },
+          { metric: "Total Falls (count)", threshold: "" },
           { metric: "Falls per 1,000 Occupied Bed Days", threshold: "<6.0" },
           { metric: "Falls with Major Injury", threshold: "0" },
           { metric: "New/Worsened Pressure Injuries (facility-acquired)", threshold: "0" },
           { metric: "Pressure Injuries \u2014 Stage 2+", threshold: "<2" },
           { metric: "Residents w/ Unplanned Weight Loss", threshold: "<3" },
           { metric: "Antipsychotic Use w/o Dx (long-stay %)", threshold: "<12%" },
-          { metric: "GDR Attempts Completed", threshold: null },
+          { metric: "GDR Attempts Completed", threshold: "" },
           { metric: "Significant Medication Errors", threshold: "0" },
           { metric: "Rehospitalizations (30-day)", threshold: "<15%" },
           { metric: "Open Investigations (FRI/Complaint/Abuse)", threshold: "0" },
           { metric: "Adverse Events Requiring Reporting", threshold: "0" },
         ]
       },
-      {
-        id: "ADON-IC",
-        label: "ADON / Infection Control",
-        title: "COFFMAN QAPI  |  ADON / INFECTION CONTROL  |  MONTHLY INPUT FORM",
-        deptHead: "Beatrix Horman",
-        extension: "x131",
-        dataSources: "Infection log, NHSN, hand hygiene audits. Report infections as rate per 1,000 resident days.",
+      "ADON-Infection Ctrl": {
+        name: "ADON-Infection Ctrl", dataSources: "Infection log, NHSN, hand hygiene audits.",
         kpis: [
-          { metric: "Total New Infections (count)", threshold: null },
-          { metric: "Infection Rate per 1,000 Resident Days", threshold: null },
+          { metric: "Total New Infections (count)", threshold: "" },
+          { metric: "Infection Rate per 1,000 Resident Days", threshold: "" },
           { metric: "UTI Count (CAUTI / non-catheter)", threshold: "<3" },
-          { metric: "Respiratory Infections (non-COVID)", threshold: null },
+          { metric: "Respiratory Infections (non-COVID)", threshold: "" },
           { metric: "COVID-19 Cases (resident / staff)", threshold: "0" },
           { metric: "GI / C. diff Cases", threshold: "0" },
           { metric: "Wound Infections", threshold: "0" },
-          { metric: "Antibiotic Starts", threshold: null },
+          { metric: "Antibiotic Starts", threshold: "" },
           { metric: "Stewardship: % Meeting Initiation Criteria", threshold: ">90%" },
           { metric: "Hand Hygiene Compliance %", threshold: ">85%" },
           { metric: "PPE / Precaution Compliance %", threshold: ">90%" },
@@ -123,643 +117,327 @@
           { metric: "Outbreak Status", threshold: "None" },
         ]
       },
-      {
-        id: "MDS",
-        label: "MDS Coordinator",
-        title: "COFFMAN QAPI  |  MDS COORDINATOR  |  MONTHLY INPUT FORM",
-        deptHead: "Connie Sarver",
-        extension: "x124",
-        dataSources: "PCC MDS scheduler, CASPER QM report, PDPM Pricer. Pull Facility Level QM report monthly.",
-        kpis: [
-          { metric: "Total MDS Assessments Completed", threshold: null },
-          { metric: "Late MDS Assessments", threshold: "0" },
-          { metric: "Average Case Mix Index (CMI)", threshold: null },
-          { metric: "PDPM \u2014 Avg PT/OT Component", threshold: null },
-          { metric: "PDPM \u2014 Avg SLP Component", threshold: null },
-          { metric: "PDPM \u2014 Avg Nursing Component", threshold: null },
-          { metric: "PDPM \u2014 Avg NTA Component", threshold: null },
-          { metric: "GG Functional Coding Audit \u2014 % Accurate", threshold: ">95%" },
-          { metric: "72-Hour Care Plans on Time", threshold: "100%" },
-          { metric: "Section GG Discharge Assessments Done", threshold: "100%" },
-          { metric: "QMs Trending Unfavorably (list in notes)", threshold: "None" },
-          { metric: "Telligen / 3871 Submissions Current?", threshold: "Yes" },
-        ]
-      },
-      {
-        id: "Admissions",
-        label: "Admissions / Census",
-        title: "COFFMAN QAPI  |  ADMISSIONS / CENSUS  |  MONTHLY INPUT FORM",
-        deptHead: "James Schaffer",
-        extension: "x133",
-        dataSources: "PCC census, referral log, bed board. Include payer breakdown.",
-        kpis: [
-          { metric: "Total Census (end of month)", threshold: "56" },
-          { metric: "Average Daily Census", threshold: "56" },
-          { metric: "Skilled \u2014 Medicare A", threshold: "13" },
-          { metric: "Skilled \u2014 Managed Care", threshold: "4" },
-          { metric: "Private Pay", threshold: "18" },
-          { metric: "Medicaid", threshold: "21" },
-          { metric: "Total Admissions", threshold: null },
-          { metric: "Total Discharges (home / hosp / other)", threshold: null },
-          { metric: "Referrals Received", threshold: null },
-          { metric: "Referrals Accepted", threshold: null },
-          { metric: "Referrals Denied (top 3 reasons in notes)", threshold: "<50%" },
-          { metric: "Avg Length of Stay \u2014 Skilled", threshold: null },
-          { metric: "Bed Hold Days Used", threshold: null },
-          { metric: "Private Rooms Occupied by Medicaid", threshold: "Track" },
-        ]
-      },
-      {
-        id: "Rehab",
-        label: "Rehabilitation / Therapy",
-        title: "COFFMAN QAPI  |  REHABILITATION / THERAPY  |  MONTHLY INPUT FORM",
-        deptHead: "Gina Houser, COTA",
-        extension: "x129",
-        dataSources: "Therapy productivity, Part B screening log. CEO PRIORITY: Part B capture from non-skilled census.",
-        kpis: [
-          { metric: "Part A \u2014 Active Caseload", threshold: null },
-          { metric: "Part A \u2014 Avg Therapy Min/Day", threshold: null },
-          { metric: "Part B \u2014 Active Caseload", threshold: null },
-          { metric: "Part B \u2014 Screens of Non-Skilled Census", threshold: "All LTC" },
-          { metric: "Part B \u2014 New Starts This Month", threshold: null },
-          { metric: "Part B \u2014 Missed Opportunities", threshold: "0" },
-          { metric: "Therapy Refusals", threshold: null },
-          { metric: "Refusal Communication Documented?", threshold: "100%" },
-          { metric: "Residents w/ Improved Function", threshold: null },
-          { metric: "Discharged Home After Rehab", threshold: null },
-          { metric: "Plateaued / Converted to LTC", threshold: null },
-          { metric: "Assist Rail Screens Current?", threshold: "Yes" },
-          { metric: "GG Scoring Accuracy (w/ MDS)", threshold: ">95%" },
-        ]
-      },
-      {
-        id: "Social Svcs",
-        label: "Social Services",
-        title: "COFFMAN QAPI  |  SOCIAL SERVICES  |  MONTHLY INPUT FORM",
-        deptHead: "Lori Perkins",
-        extension: "x112",
-        dataSources: "Grievance log, care plan schedule, discharge tracking, MOLST audit.",
-        kpis: [
-          { metric: "72-Hour Care Conferences (count / % timely)", threshold: "100%" },
-          { metric: "Routine Care Conferences Held", threshold: null },
-          { metric: "Grievances Received", threshold: null },
-          { metric: "Grievances Resolved", threshold: "100%" },
-          { metric: "Grievances Outstanding (>5 biz days)", threshold: "0" },
-          { metric: "Reportable Incidents (to OHCQ)", threshold: null },
-          { metric: "Missing Personal Items", threshold: null },
-          { metric: "Advance Directives \u2014 % Complete on Admit", threshold: "100%" },
-          { metric: "MOLST \u2014 % Reviewed w/ Resident/Rep", threshold: "100%" },
-          { metric: "PHQ-9 Completed/Signed Timely", threshold: "100%" },
-          { metric: "Discharge Plans w/ Follow-Up Arranged", threshold: "100%" },
-          { metric: "AMAs (with reason in notes)", threshold: "0" },
-        ]
-      },
-      {
-        id: "Activities",
-        label: "Activities",
-        title: "COFFMAN QAPI  |  ACTIVITIES  |  MONTHLY INPUT FORM",
-        deptHead: "Samantha McKenzie",
-        extension: "x114",
-        dataSources: "Calendar, participation logs, resident council minutes.",
-        kpis: [
-          { metric: "Total Activities Offered", threshold: null },
-          { metric: "Avg Participation per Activity", threshold: null },
-          { metric: "1:1 Visits \u2014 Bed-Bound Residents", threshold: "All" },
-          { metric: "Resident Council Meeting Held?", threshold: "Yes" },
-          { metric: "Council Concerns Needing Follow-Up", threshold: null },
-          { metric: "Outstanding UDAs", threshold: "0" },
-          { metric: "New Resident Assessments Timely?", threshold: "100%" },
-          { metric: "Community Outings / Special Events", threshold: null },
-          { metric: "Resident Satisfaction (pos/neg themes)", threshold: null },
-          { metric: "Volunteer Hours", threshold: null },
-        ]
-      },
-      {
-        id: "Dietary",
-        label: "Dietary Services",
-        title: "COFFMAN QAPI  |  DIETARY SERVICES (FOREFRONT)  |  MONTHLY INPUT FORM",
-        deptHead: "John Runshaw",
-        extension: "x122",
-        dataSources: "Tray audits, temp logs, kitchen inspection, Marian Moormann (dietitian) input.",
-        kpis: [
-          { metric: "Tray Accuracy Audit %", threshold: ">95%" },
-          { metric: "Meal Temperature Compliance %", threshold: "100%" },
-          { metric: "Residents on Tube Feeding", threshold: null },
-          { metric: "Residents on Thickened Liquids", threshold: null },
-          { metric: "Residents on Protein/Nutrition Suppl.", threshold: null },
-          { metric: "Undesirable Weight Loss (count)", threshold: null },
-          { metric: "Undesirable Weight Gain (count)", threshold: null },
-          { metric: "Residents w/ Pressure Injuries (dietary)", threshold: null },
-          { metric: "Kitchen Audit Score (most recent)", threshold: ">90%" },
-          { metric: "Food Safety Violations", threshold: "0" },
-          { metric: "Diet-Related Grievances", threshold: "0" },
-          { metric: "Menu Substitution Compliance", threshold: "100%" },
-        ]
-      },
-      {
-        id: "HR",
-        label: "Human Resources / Staffing",
-        title: "COFFMAN QAPI  |  HUMAN RESOURCES / STAFFING  |  MONTHLY INPUT FORM",
-        deptHead: "Michael Burger",
-        extension: "x123",
-        dataSources: "OnShift, UKG payroll, orientation records.",
-        kpis: [
-          { metric: "Total Employee Count", threshold: null },
-          { metric: "Open Positions (RN/LPN/CNA/Other)", threshold: null },
-          { metric: "New Hires This Month", threshold: null },
-          { metric: "Terminations (vol / invol)", threshold: null },
-          { metric: "Turnover Rate (rolling 12-mo)", threshold: "<30%" },
-          { metric: "Agency Hours (total)", threshold: null },
-          { metric: "Agency % of Total Nursing Hours", threshold: "<10%" },
-          { metric: "Overtime Hours", threshold: null },
-          { metric: "Call-Outs This Month", threshold: null },
-          { metric: "Orientations Completed on Time", threshold: "100%" },
-          { metric: "Annual In-Services Current (% staff)", threshold: ">95%" },
-          { metric: "OIG/SAM Exclusion Checks Current?", threshold: "Yes" },
-          { metric: "HPPD \u2014 RN", threshold: "Per COMAR" },
-          { metric: "HPPD \u2014 Total Nursing", threshold: ">3.0" },
-        ]
-      },
-      {
-        id: "Maintenance",
-        label: "Maintenance / Plant Ops",
-        title: "COFFMAN QAPI  |  MAINTENANCE / PLANT OPS  |  MONTHLY INPUT FORM",
-        deptHead: "Randy Eckenrode / Gary",
-        extension: "x134",
-        dataSources: "Work order log, drill logs, temp logs, equipment records.",
-        kpis: [
-          { metric: "Open Work Orders (count)", threshold: null },
-          { metric: "Work Orders Completed", threshold: null },
-          { metric: "Avg Completion Time (days)", threshold: "<5" },
-          { metric: "Fire Drill Completed (date)", threshold: "Monthly" },
-          { metric: "Elopement Drill Completed (date)", threshold: "Monthly" },
-          { metric: "Water Temps \u2014 All in Range?", threshold: "Yes" },
-          { metric: "Generator Test Done?", threshold: "Yes" },
-          { metric: "Kitchen Equipment Inspection Done?", threshold: "Monthly" },
-          { metric: "Bed Safety Reviews Current?", threshold: "Yes" },
-          { metric: "Major Equipment Issues", threshold: "0 critical" },
-          { metric: "Maintenance Logs Up to Date?", threshold: "Yes" },
-          { metric: "Floor/Tile Repairs Status", threshold: null },
-          { metric: "Pest Control \u2014 Last Service Date", threshold: "Monthly" },
-        ]
-      },
-      {
-        id: "Med Director",
-        label: "Medical Director",
-        title: "COFFMAN QAPI  |  MEDICAL DIRECTOR  |  MONTHLY INPUT FORM",
-        deptHead: "Dr. Wasim",
-        extension: "(via DON)",
-        dataSources: "Discuss at meeting. DON/ADON can prepare data.",
-        kpis: [
-          { metric: "Chart Reviews Completed", threshold: null },
-          { metric: "Provider Challenges / Missed Opportunities", threshold: null },
-          { metric: "Risks Identified This Month", threshold: null },
-          { metric: "Provider Initiatives to Decrease RTH", threshold: null },
-          { metric: "MOLST / Code Status Reviews (new admits)", threshold: "All" },
-          { metric: "Antibiotic Orders Meeting Criteria", threshold: ">90%" },
-          { metric: "Pharmacy Recs Reviewed?", threshold: "Yes" },
-          { metric: "Outstanding Orders to Sign", threshold: "0" },
-          { metric: "Overdue Certs / Recerts", threshold: "0" },
-          { metric: "Psychotropic Monitoring Compliance", threshold: "100%" },
-        ]
-      },
-      {
-        id: "GNA Report",
-        label: "GNA / Direct Care Staff Voice",
-        title: "COFFMAN QAPI  |  GNA / DIRECT CARE STAFF VOICE  |  MONTHLY INPUT FORM",
-        deptHead: "(Rotating CNA Rep)",
-        extension: "N/A",
-        dataSources: "Per QAPI Plan: GNA attends monthly and informs leadership of needs. This IS the resident voice.",
-        kpis: [
-          { metric: "Success Stories (care wins this month)", threshold: null },
-          { metric: "Top Concern #1 from Floor Staff", threshold: null },
-          { metric: "Top Concern #2 from Floor Staff", threshold: null },
-          { metric: "Top Concern #3 from Floor Staff", threshold: null },
-          { metric: "Equipment / Supply Needs", threshold: null },
-          { metric: "Resident Feedback \u2014 Positive Themes", threshold: null },
-          { metric: "Resident Feedback \u2014 Negative Themes", threshold: null },
-          { metric: "Staffing Concerns (CNA perspective)", threshold: null },
-          { metric: "Safety Concerns Observed", threshold: null },
-          { metric: "Ideas for Improvement", threshold: null },
-        ]
-      },
-    ];
+      "MDS Coordinator": { name: "MDS Coordinator", dataSources: "PCC MDS scheduler, CASPER QM report, PDPM Pricer.", kpis: [
+        { metric: "Total MDS Assessments Completed", threshold: "" }, { metric: "Late MDS Assessments", threshold: "0" }, { metric: "Average Case Mix Index (CMI)", threshold: "" }, { metric: "PDPM \u2014 Avg PT/OT Component", threshold: "" }, { metric: "PDPM \u2014 Avg SLP Component", threshold: "" }, { metric: "PDPM \u2014 Avg Nursing Component", threshold: "" }, { metric: "PDPM \u2014 Avg NTA Component", threshold: "" }, { metric: "GG Functional Coding Audit \u2014 % Accurate", threshold: ">95%" }, { metric: "72-Hour Care Plans on Time", threshold: "100%" }, { metric: "Section GG Discharge Assessments Done", threshold: "100%" }, { metric: "QMs Trending Unfavorably (list in notes)", threshold: "None" }, { metric: "Telligen / 3871 Submissions Current?", threshold: "Yes" },
+      ]},
+      "Admissions-Census": { name: "Admissions-Census", dataSources: "PCC census, referral log, bed board.", kpis: [
+        { metric: "Total Census (end of month)", threshold: "56" }, { metric: "Average Daily Census", threshold: "56" }, { metric: "Skilled \u2014 Medicare A", threshold: "13" }, { metric: "Skilled \u2014 Managed Care", threshold: "4" }, { metric: "Private Pay", threshold: "18" }, { metric: "Medicaid", threshold: "21" }, { metric: "Total Admissions", threshold: "" }, { metric: "Total Discharges (home / hosp / other)", threshold: "" }, { metric: "Referrals Received", threshold: "" }, { metric: "Referrals Accepted", threshold: "" }, { metric: "Referrals Denied (top 3 reasons in notes)", threshold: "<50%" }, { metric: "Avg Length of Stay \u2014 Skilled", threshold: "" }, { metric: "Bed Hold Days Used", threshold: "" }, { metric: "Private Rooms Occupied by Medicaid", threshold: "Track" },
+      ]},
+      "Rehab-Therapy": { name: "Rehab-Therapy", dataSources: "Therapy productivity, Part B screening log.", kpis: [
+        { metric: "Part A \u2014 Active Caseload", threshold: "" }, { metric: "Part A \u2014 Avg Therapy Min/Day", threshold: "" }, { metric: "Part B \u2014 Active Caseload", threshold: "" }, { metric: "Part B \u2014 Screens of Non-Skilled Census", threshold: "All LTC" }, { metric: "Part B \u2014 New Starts This Month", threshold: "" }, { metric: "Part B \u2014 Missed Opportunities", threshold: "0" }, { metric: "Therapy Refusals", threshold: "" }, { metric: "Refusal Communication Documented?", threshold: "100%" }, { metric: "Residents w/ Improved Function", threshold: "" }, { metric: "Discharged Home After Rehab", threshold: "" }, { metric: "Plateaued / Converted to LTC", threshold: "" }, { metric: "Assist Rail Screens Current?", threshold: "Yes" }, { metric: "GG Scoring Accuracy (w/ MDS)", threshold: ">95%" },
+      ]},
+      "Social Services": { name: "Social Services", dataSources: "Grievance log, care plan schedule, discharge tracking, MOLST audit.", kpis: [
+        { metric: "72-Hour Care Conferences (count / % timely)", threshold: "100%" }, { metric: "Routine Care Conferences Held", threshold: "" }, { metric: "Grievances Received", threshold: "" }, { metric: "Grievances Resolved", threshold: "100%" }, { metric: "Grievances Outstanding (>5 biz days)", threshold: "0" }, { metric: "Reportable Incidents (to OHCQ)", threshold: "" }, { metric: "Missing Personal Items", threshold: "" }, { metric: "Advance Directives \u2014 % Complete on Admit", threshold: "100%" }, { metric: "MOLST \u2014 % Reviewed w/ Resident/Rep", threshold: "100%" }, { metric: "PHQ-9 Completed/Signed Timely", threshold: "100%" }, { metric: "Discharge Plans w/ Follow-Up Arranged", threshold: "100%" }, { metric: "AMAs (with reason in notes)", threshold: "0" },
+      ]},
+      "Activities": { name: "Activities", dataSources: "Calendar, participation logs, resident council minutes.", kpis: [
+        { metric: "Total Activities Offered", threshold: "" }, { metric: "Avg Participation per Activity", threshold: "" }, { metric: "1:1 Visits \u2014 Bed-Bound Residents", threshold: "All" }, { metric: "Resident Council Meeting Held?", threshold: "Yes" }, { metric: "Council Concerns Needing Follow-Up", threshold: "" }, { metric: "Outstanding UDAs", threshold: "0" }, { metric: "New Resident Assessments Timely?", threshold: "100%" }, { metric: "Community Outings / Special Events", threshold: "" }, { metric: "Resident Satisfaction (pos/neg themes)", threshold: "" }, { metric: "Volunteer Hours", threshold: "" },
+      ]},
+      "Dietary Services": { name: "Dietary Services", dataSources: "Tray audits, temp logs, kitchen inspection, dietitian input.", kpis: [
+        { metric: "Tray Accuracy Audit %", threshold: ">95%" }, { metric: "Meal Temperature Compliance %", threshold: "100%" }, { metric: "Residents on Tube Feeding", threshold: "" }, { metric: "Residents on Thickened Liquids", threshold: "" }, { metric: "Residents on Protein/Nutrition Suppl.", threshold: "" }, { metric: "Undesirable Weight Loss (count)", threshold: "" }, { metric: "Undesirable Weight Gain (count)", threshold: "" }, { metric: "Residents w/ Pressure Injuries (dietary)", threshold: "" }, { metric: "Kitchen Audit Score (most recent)", threshold: ">90%" }, { metric: "Food Safety Violations", threshold: "0" }, { metric: "Diet-Related Grievances", threshold: "0" }, { metric: "Menu Substitution Compliance", threshold: "100%" },
+      ]},
+      "Human Resources": { name: "Human Resources", dataSources: "Payroll system, orientation records, staffing reports.", kpis: [
+        { metric: "Total Employee Count", threshold: "" }, { metric: "Open Positions (RN/LPN/CNA/Other)", threshold: "" }, { metric: "New Hires This Month", threshold: "" }, { metric: "Terminations (vol / invol)", threshold: "" }, { metric: "Turnover Rate (rolling 12-mo)", threshold: "<30%" }, { metric: "Agency Hours (total)", threshold: "" }, { metric: "Agency % of Total Nursing Hours", threshold: "<10%" }, { metric: "Overtime Hours", threshold: "" }, { metric: "Call-Outs This Month", threshold: "" }, { metric: "Orientations Completed on Time", threshold: "100%" }, { metric: "Annual In-Services Current (% staff)", threshold: ">95%" }, { metric: "OIG/SAM Exclusion Checks Current?", threshold: "Yes" }, { metric: "HPPD \u2014 RN", threshold: "Per COMAR" }, { metric: "HPPD \u2014 Total Nursing", threshold: ">3.0" },
+      ]},
+      "Maintenance": { name: "Maintenance", dataSources: "Work order log, drill logs, temp logs, equipment records.", kpis: [
+        { metric: "Open Work Orders (count)", threshold: "" }, { metric: "Work Orders Completed", threshold: "" }, { metric: "Avg Completion Time (days)", threshold: "<5" }, { metric: "Fire Drill Completed (date)", threshold: "Monthly" }, { metric: "Elopement Drill Completed (date)", threshold: "Monthly" }, { metric: "Water Temps \u2014 All in Range?", threshold: "Yes" }, { metric: "Generator Test Done?", threshold: "Yes" }, { metric: "Kitchen Equipment Inspection Done?", threshold: "Monthly" }, { metric: "Bed Safety Reviews Current?", threshold: "Yes" }, { metric: "Major Equipment Issues", threshold: "0 critical" }, { metric: "Maintenance Logs Up to Date?", threshold: "Yes" }, { metric: "Floor/Tile Repairs Status", threshold: "" }, { metric: "Pest Control \u2014 Last Service Date", threshold: "Monthly" },
+      ]},
+      "Medical Director": { name: "Medical Director", dataSources: "Chart reviews, clinical discussions. DON/ADON can prepare data.", kpis: [
+        { metric: "Chart Reviews Completed", threshold: "" }, { metric: "Provider Challenges / Missed Opportunities", threshold: "" }, { metric: "Risks Identified This Month", threshold: "" }, { metric: "Provider Initiatives to Decrease RTH", threshold: "" }, { metric: "MOLST / Code Status Reviews (new admits)", threshold: "All" }, { metric: "Antibiotic Orders Meeting Criteria", threshold: ">90%" }, { metric: "Pharmacy Recs Reviewed?", threshold: "Yes" }, { metric: "Outstanding Orders to Sign", threshold: "0" }, { metric: "Overdue Certs / Recerts", threshold: "0" }, { metric: "Psychotropic Monitoring Compliance", threshold: "100%" },
+      ]},
+      "GNA-Staff Voice": { name: "GNA-Staff Voice", dataSources: "Per QAPI Plan: GNA attends monthly and informs leadership. This IS the resident voice.", kpis: [
+        { metric: "Success Stories (care wins this month)", threshold: "" }, { metric: "Top Concern #1 from Floor Staff", threshold: "" }, { metric: "Top Concern #2 from Floor Staff", threshold: "" }, { metric: "Top Concern #3 from Floor Staff", threshold: "" }, { metric: "Equipment / Supply Needs", threshold: "" }, { metric: "Resident Feedback \u2014 Positive Themes", threshold: "" }, { metric: "Resident Feedback \u2014 Negative Themes", threshold: "" }, { metric: "Staffing Concerns (CNA perspective)", threshold: "" }, { metric: "Safety Concerns Observed", threshold: "" }, { metric: "Ideas for Improvement", threshold: "" },
+      ]},
+    };
 
-    const MONTHS = [
-      "January","February","March","April","May","June",
-      "July","August","September","October","November","December"
-    ];
-
+    const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
     const STATUS_OPTIONS = ["Not Started","In Progress","Complete","On Hold"];
 
     /* ==============================================================
-       HELPER: Determine trend from prior vs current
+       GOOGLE SHEET CONNECTION
        ============================================================== */
-    function getTrend(prior, current, threshold) {
+    const CONFIG_KEY = "coffman_qapi_config";
+    const DATA_KEY = "coffman_qapi_dept_input";
+
+    function getConfig() {
+      try { return JSON.parse(localStorage.getItem(CONFIG_KEY)) || {}; } catch { return {}; }
+    }
+    function saveConfig(cfg) {
+      localStorage.setItem(CONFIG_KEY, JSON.stringify(cfg));
+    }
+    function getLocalData() {
+      try { return JSON.parse(localStorage.getItem(DATA_KEY)) || {}; } catch { return {}; }
+    }
+    function saveLocalData(data) {
+      localStorage.setItem(DATA_KEY, JSON.stringify(data));
+    }
+
+    async function fetchFromSheet(scriptUrl, action, params = {}) {
+      const url = new URL(scriptUrl);
+      url.searchParams.set("action", action);
+      Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
+      const resp = await fetch(url.toString());
+      return resp.json();
+    }
+
+    async function postToSheet(scriptUrl, payload) {
+      const resp = await fetch(scriptUrl, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain" },
+        body: JSON.stringify(payload),
+      });
+      return resp.json();
+    }
+
+    /* ==============================================================
+       HELPERS
+       ============================================================== */
+    function getTrend(prior, current) {
       if (!prior || !current) return null;
-      const p = parseFloat(prior);
-      const c = parseFloat(current);
+      const p = parseFloat(prior), c = parseFloat(current);
       if (isNaN(p) || isNaN(c)) return null;
-      if (c > p) return "up";
-      if (c < p) return "down";
-      return "flat";
+      return c > p ? "up" : c < p ? "down" : "flat";
     }
+    function getTrendIcon(t) { return t === "up" ? "\u2191" : t === "down" ? "\u2193" : t === "flat" ? "\u2192" : ""; }
 
-    function getTrendIcon(trend) {
-      if (trend === "up") return "\u2191";
-      if (trend === "down") return "\u2193";
-      if (trend === "flat") return "\u2192";
-      return "";
-    }
-
-    /* Determine if threshold is met */
     function checkThreshold(value, threshold) {
       if (!value || !threshold) return "na";
       const v = parseFloat(value);
       if (isNaN(v)) {
-        const vl = value.toLowerCase().trim();
-        const tl = threshold.toLowerCase().trim();
-        if (tl === "yes" && vl === "yes") return "met";
-        if (tl === "yes" && vl === "no") return "not-met";
-        if (tl === "none" && (vl === "none" || vl === "0" || vl === "")) return "met";
-        if (tl === "none") return "not-met";
-        if (tl === "all" || tl === "all ltc" || tl === "monthly" || tl === "track" || tl === "per comar") return "track";
+        const vl = value.toLowerCase().trim(), tl = threshold.toLowerCase().trim();
+        if (tl === "yes") return vl === "yes" ? "met" : "not-met";
+        if (tl === "none") return (vl === "none" || vl === "0" || vl === "") ? "met" : "not-met";
+        if (["all","all ltc","monthly","track","per comar"].includes(tl)) return "track";
         return "na";
       }
       const t = threshold.replace(/[^0-9.<>%\-+]/g, "");
-      if (t.startsWith("<")) {
-        const tv = parseFloat(t.substring(1));
-        return v < tv ? "met" : "not-met";
-      }
-      if (t.startsWith(">")) {
-        const tv = parseFloat(t.substring(1));
-        return v > tv ? "met" : "not-met";
-      }
+      if (t.startsWith("<")) return v < parseFloat(t.substring(1)) ? "met" : "not-met";
+      if (t.startsWith(">")) return v > parseFloat(t.substring(1)) ? "met" : "not-met";
       const tv = parseFloat(t);
-      if (!isNaN(tv)) {
-        if (threshold.includes("+")) return v >= tv ? "met" : "not-met";
-        return v <= tv ? "met" : "not-met";
-      }
+      if (!isNaN(tv)) return threshold.includes("+") ? (v >= tv ? "met" : "not-met") : (v <= tv ? "met" : "not-met");
       return "na";
     }
 
+    function getFormKey(deptId, month, year) { return `${deptId}_${year}_${month}`; }
+
     /* ==============================================================
-       LOCAL STORAGE HELPERS
+       TOAST NOTIFICATION
        ============================================================== */
-    const STORAGE_KEY = "coffman_qapi_dept_input";
-
-    function loadSavedData() {
-      try {
-        const raw = localStorage.getItem(STORAGE_KEY);
-        return raw ? JSON.parse(raw) : {};
-      } catch { return {}; }
-    }
-
-    function saveData(data) {
-      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch {}
-    }
-
-    function getFormKey(deptId, month, year) {
-      return `${deptId}_${year}_${month}`;
+    function Toast({ message, type, onDone }) {
+      useEffect(() => { const t = setTimeout(onDone, 3000); return () => clearTimeout(t); }, []);
+      return <div className={`toast toast-${type}`}>{message}</div>;
     }
 
     /* ==============================================================
-       WORD EXPORT
+       WORD EXPORT (unchanged logic, uses dept config)
        ============================================================== */
     async function exportToWord(dept, formData, month, year) {
       const dl = window.docxLib;
-      if (!dl) { alert("Word export library still loading. Please try again in a moment."); return; }
-
-      const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell,
-              AlignmentType, BorderStyle, WidthType, ShadingType, Header, Footer, PageNumber } = dl;
-
-      const PAGE_W = 12240;
-      const MARGIN = 1080; // 0.75 inch
-      const TABLE_W = PAGE_W - MARGIN * 2; // 10080
-      const COL_A = 4200; // Metric name
-      const COL_B = 1300; // Prior Mo
-      const COL_C = 1300; // Current Mo
-      const COL_D = 1500; // Threshold
-      const COL_E = 1780; // Trend/Notes
-
+      if (!dl) { alert("Word export library still loading."); return; }
+      const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, AlignmentType, BorderStyle, WidthType, ShadingType } = dl;
+      const PAGE_W = 12240, MARGIN = 1080, TABLE_W = PAGE_W - MARGIN * 2;
+      const COL_A = 4200, COL_B = 1300, COL_C = 1300, COL_D = 1500, COL_E = 1780;
       const border = { style: BorderStyle.SINGLE, size: 1, color: "999999" };
       const borders = { top: border, bottom: border, left: border, right: border };
-      const noBorder = { style: BorderStyle.NONE, size: 0 };
-      const noBorders = { top: noBorder, bottom: noBorder, left: noBorder, right: noBorder };
 
       function cell(text, width, opts = {}) {
-        const { bold, bg, align, fontSize, span } = opts;
         return new TableCell({
-          width: { size: width, type: WidthType.DXA },
-          borders,
-          columnSpan: span || 1,
-          shading: bg ? { fill: bg, type: ShadingType.CLEAR } : undefined,
+          width: { size: width, type: WidthType.DXA }, borders, columnSpan: opts.span || 1,
+          shading: opts.bg ? { fill: opts.bg, type: ShadingType.CLEAR } : undefined,
           margins: { top: 40, bottom: 40, left: 80, right: 80 },
-          children: [new Paragraph({
-            alignment: align || AlignmentType.LEFT,
-            spacing: { before: 20, after: 20 },
-            children: [new TextRun({
-              text: text || "",
-              bold: bold || false,
-              font: "Arial",
-              size: fontSize || 18,
-            })]
+          children: [new Paragraph({ alignment: opts.align || AlignmentType.LEFT, spacing: { before: 20, after: 20 },
+            children: [new TextRun({ text: text || "", bold: opts.bold || false, font: "Arial", size: opts.fontSize || 18, color: opts.color })]
           })]
         });
       }
-
-      function headerCell(text, width, opts = {}) {
-        return cell(text, width, { bold: true, bg: "1A5276", fontSize: 18, align: AlignmentType.CENTER, ...opts });
-      }
-
-      // Override for header white text
-      function headerCellWhite(text, width, opts = {}) {
-        const { span } = opts;
-        return new TableCell({
-          width: { size: width, type: WidthType.DXA },
-          borders,
-          columnSpan: span || 1,
-          shading: { fill: "1A5276", type: ShadingType.CLEAR },
-          margins: { top: 40, bottom: 40, left: 80, right: 80 },
-          children: [new Paragraph({
-            alignment: AlignmentType.CENTER,
-            spacing: { before: 20, after: 20 },
-            children: [new TextRun({
-              text: text || "",
-              bold: true,
-              font: "Arial",
-              size: 18,
-              color: "FFFFFF",
-            })]
-          })]
-        });
+      function hCell(text, width, opts = {}) {
+        return cell(text, width, { bold: true, bg: "1A5276", color: "FFFFFF", align: AlignmentType.CENTER, ...opts });
       }
 
       const kpiData = formData.kpis || {};
       const rows = [];
 
-      // Title row
-      rows.push(new TableRow({
-        children: [
-          new TableCell({
-            width: { size: TABLE_W, type: WidthType.DXA },
-            columnSpan: 5,
-            borders,
-            shading: { fill: "1A5276", type: ShadingType.CLEAR },
-            margins: { top: 60, bottom: 60, left: 120, right: 120 },
-            children: [new Paragraph({
-              alignment: AlignmentType.CENTER,
-              children: [new TextRun({
-                text: dept.title,
-                bold: true, font: "Arial", size: 22, color: "FFFFFF"
-              })]
-            })]
-          })
-        ]
-      }));
-
-      // Dept head / extension / month row
-      rows.push(new TableRow({
-        children: [
-          cell(`Department Head: ${formData.deptHead || dept.deptHead}`, COL_A + COL_B, { bold: true, span: 2 }),
-          cell(`Ext: ${dept.extension}`, COL_C),
-          cell(`Reporting Month: ${MONTHS[month]} ${year}`, COL_D + COL_E, { bold: true, span: 2 }),
-        ]
-      }));
-
-      // Data sources row
-      rows.push(new TableRow({
-        children: [
-          new TableCell({
-            width: { size: TABLE_W, type: WidthType.DXA },
-            columnSpan: 5,
-            borders,
-            shading: { fill: "F2F2F2", type: ShadingType.CLEAR },
-            margins: { top: 40, bottom: 40, left: 80, right: 80 },
-            children: [new Paragraph({
-              spacing: { before: 20, after: 20 },
-              children: [new TextRun({
-                text: `Data Sources: ${dept.dataSources}`,
-                italics: true, font: "Arial", size: 16,
-              })]
-            })]
-          })
-        ]
-      }));
-
+      // Title
+      rows.push(new TableRow({ children: [hCell("COFFMAN QAPI  |  " + dept.name.toUpperCase() + "  |  MONTHLY INPUT FORM", TABLE_W, { span: 5, fontSize: 22 })] }));
+      // Position / Month
+      rows.push(new TableRow({ children: [
+        cell("Position: " + dept.name, COL_A + COL_B, { bold: true, span: 2 }),
+        cell("Reporting Month: " + MONTHS[month] + " " + year, COL_C + COL_D + COL_E, { bold: true, span: 3 }),
+      ]}));
+      // Sources
+      rows.push(new TableRow({ children: [cell("Data Sources: " + (dept.dataSources || ""), TABLE_W, { span: 5, bg: "F2F2F2", fontSize: 16 })] }));
       // Column headers
-      rows.push(new TableRow({
-        children: [
-          headerCellWhite("Performance Metric / KPI", COL_A),
-          headerCellWhite("Prior Mo.", COL_B),
-          headerCellWhite("Current Mo.", COL_C),
-          headerCellWhite("Threshold/Target", COL_D),
-          headerCellWhite("Trend / Notes", COL_E),
-        ]
-      }));
-
-      // KPI rows
+      rows.push(new TableRow({ children: [hCell("Performance Metric / KPI", COL_A), hCell("Prior Mo.", COL_B), hCell("Current Mo.", COL_C), hCell("Threshold/Target", COL_D), hCell("Trend / Notes", COL_E)] }));
+      // KPIs
       dept.kpis.forEach((kpi, i) => {
         const k = kpiData[i] || {};
-        const isAlt = i % 2 === 1;
-        const bg = isAlt ? "F8F9FA" : undefined;
-        rows.push(new TableRow({
-          children: [
-            cell(kpi.metric, COL_A, { bg, fontSize: 17 }),
-            cell(k.prior || "", COL_B, { align: AlignmentType.CENTER, bg }),
-            cell(k.current || "", COL_C, { align: AlignmentType.CENTER, bg }),
-            cell(kpi.threshold || "\u2014", COL_D, { align: AlignmentType.CENTER, bg }),
-            cell(k.notes || "", COL_E, { bg, fontSize: 16 }),
-          ]
-        }));
+        const bg = i % 2 === 1 ? "F8F9FA" : undefined;
+        rows.push(new TableRow({ children: [
+          cell(kpi.metric, COL_A, { bg, fontSize: 17 }),
+          cell(k.prior || "", COL_B, { align: AlignmentType.CENTER, bg }),
+          cell(k.current || "", COL_C, { align: AlignmentType.CENTER, bg }),
+          cell(kpi.threshold || "\u2014", COL_D, { align: AlignmentType.CENTER, bg }),
+          cell(k.notes || "", COL_E, { bg, fontSize: 16 }),
+        ]}));
       });
-
-      // Opportunities section
-      rows.push(new TableRow({
-        children: [
-          new TableCell({
-            width: { size: TABLE_W, type: WidthType.DXA },
-            columnSpan: 5,
-            borders,
-            shading: { fill: "1A5276", type: ShadingType.CLEAR },
-            margins: { top: 40, bottom: 40, left: 80, right: 80 },
-            children: [new Paragraph({
-              alignment: AlignmentType.LEFT,
-              children: [new TextRun({
-                text: "OPPORTUNITIES FOR IMPROVEMENT / BARRIERS (identify at least 1)",
-                bold: true, font: "Arial", size: 18, color: "FFFFFF"
-              })]
-            })]
-          })
-        ]
-      }));
-
-      const opps = formData.opportunities || ["","",""];
-      opps.forEach((opp, i) => {
-        rows.push(new TableRow({
-          children: [
-            cell(`${i + 1}. ${opp || ""}`, TABLE_W, { span: 5 }),
-          ]
-        }));
+      // Opportunities
+      rows.push(new TableRow({ children: [hCell("OPPORTUNITIES FOR IMPROVEMENT / BARRIERS (identify at least 1)", TABLE_W, { span: 5, align: AlignmentType.LEFT })] }));
+      (formData.opportunities || ["","",""]).forEach((opp, i) => {
+        rows.push(new TableRow({ children: [cell((i+1) + ". " + (opp || ""), TABLE_W, { span: 5 })] }));
       });
-
-      // Plan for Improvement
-      rows.push(new TableRow({
-        children: [
-          new TableCell({
-            width: { size: TABLE_W, type: WidthType.DXA },
-            columnSpan: 5,
-            borders,
-            shading: { fill: "1A5276", type: ShadingType.CLEAR },
-            margins: { top: 40, bottom: 40, left: 80, right: 80 },
-            children: [new Paragraph({
-              alignment: AlignmentType.LEFT,
-              children: [new TextRun({
-                text: "PLAN FOR IMPROVEMENT",
-                bold: true, font: "Arial", size: 18, color: "FFFFFF"
-              })]
-            })]
-          })
-        ]
-      }));
-
-      // Plan headers
-      const PLAN_COL_A = 4500;
-      const PLAN_COL_B = 2200;
-      const PLAN_COL_C = 1580;
-      const PLAN_COL_D = 1800;
-      rows.push(new TableRow({
-        children: [
-          headerCellWhite("Action / Intervention", PLAN_COL_A),
-          headerCellWhite("Responsible", PLAN_COL_B),
-          headerCellWhite("Due Date", PLAN_COL_C),
-          headerCellWhite("Status", PLAN_COL_D),
-        ]
-      }));
-
-      const plans = formData.plans || [{},{},{},{}];
-      plans.forEach(p => {
-        rows.push(new TableRow({
-          children: [
-            cell(p.action || "", PLAN_COL_A),
-            cell(p.responsible || "", PLAN_COL_B, { align: AlignmentType.CENTER }),
-            cell(p.dueDate || "", PLAN_COL_C, { align: AlignmentType.CENTER }),
-            cell(p.status || "", PLAN_COL_D, { align: AlignmentType.CENTER }),
-          ]
-        }));
+      // Plan
+      rows.push(new TableRow({ children: [hCell("PLAN FOR IMPROVEMENT", TABLE_W, { span: 5, align: AlignmentType.LEFT })] }));
+      const PCA = 4500, PCB = 2200, PCC = 1580, PCD = 1800;
+      rows.push(new TableRow({ children: [hCell("Action / Intervention", PCA), hCell("Responsible", PCB), hCell("Due Date", PCC), hCell("Status", PCD)] }));
+      (formData.plans || [{},{},{},{}]).forEach(p => {
+        rows.push(new TableRow({ children: [cell(p.action||"",PCA), cell(p.responsible||"",PCB,{align:AlignmentType.CENTER}), cell(p.dueDate||"",PCC,{align:AlignmentType.CENTER}), cell(p.status||"",PCD,{align:AlignmentType.CENTER})] }));
       });
+      // Signature
+      const noBorder = { style: BorderStyle.NONE, size: 0 };
+      rows.push(new TableRow({ children: [new TableCell({
+        width: { size: TABLE_W, type: WidthType.DXA }, columnSpan: 5,
+        borders: { top: noBorder, bottom: noBorder, left: noBorder, right: noBorder },
+        margins: { top: 120, bottom: 40, left: 80, right: 80 },
+        children: [new Paragraph({ spacing: { before: 120 }, children: [
+          new TextRun({ text: "Prepared by: " + (formData.preparedBy||"") + "     Date: " + (formData.preparedDate||"") + "     Presented at QAPI: " + (formData.presentedAtQapi ? "Yes" : "No"), font: "Arial", size: 18 })
+        ]})]
+      })] }));
 
-      // Signature row
-      rows.push(new TableRow({
-        children: [
-          new TableCell({
-            width: { size: TABLE_W, type: WidthType.DXA },
-            columnSpan: 5,
-            borders: noBorders,
-            margins: { top: 120, bottom: 40, left: 80, right: 80 },
-            children: [new Paragraph({
-              spacing: { before: 120, after: 60 },
-              children: [
-                new TextRun({ text: `Prepared by: ${formData.preparedBy || ""}     `, font: "Arial", size: 18 }),
-                new TextRun({ text: `Date: ${formData.preparedDate || ""}     `, font: "Arial", size: 18 }),
-                new TextRun({ text: `Presented at QAPI:  ${formData.presentedAtQapi ? "Yes" : "No"}`, font: "Arial", size: 18 }),
-              ]
-            })]
-          })
-        ]
-      }));
-
-      const table = new Table({
-        width: { size: TABLE_W, type: WidthType.DXA },
-        columnWidths: [COL_A, COL_B, COL_C, COL_D, COL_E],
-        rows,
-      });
-
-      const doc = new Document({
-        sections: [{
-          properties: {
-            page: {
-              size: { width: PAGE_W, height: 15840 },
-              margin: { top: 720, right: MARGIN, bottom: 720, left: MARGIN },
-            }
-          },
-          children: [table]
-        }]
-      });
-
+      const table = new Table({ width: { size: TABLE_W, type: WidthType.DXA }, columnWidths: [COL_A, COL_B, COL_C, COL_D, COL_E], rows });
+      const doc = new Document({ sections: [{ properties: { page: { size: { width: PAGE_W, height: 15840 }, margin: { top: 720, right: MARGIN, bottom: 720, left: MARGIN } } }, children: [table] }] });
       const blob = await Packer.toBlob(doc);
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `QAPI_${dept.id.replace(/\s/g,"_")}_${MONTHS[month]}_${year}.docx`;
+      a.download = "QAPI_" + dept.name.replace(/[\s\/]/g, "_") + "_" + MONTHS[month] + "_" + year + ".docx";
       a.click();
       URL.revokeObjectURL(url);
     }
 
     /* ==============================================================
-       COPY TO CLIPBOARD (formatted text for email)
+       COPY TO CLIPBOARD
        ============================================================== */
     function copyToClipboard(dept, formData, month, year) {
       const kpiData = formData.kpis || {};
-      let text = `${dept.title}\n`;
-      text += `Department Head: ${formData.deptHead || dept.deptHead}  |  Ext: ${dept.extension}\n`;
-      text += `Reporting Month: ${MONTHS[month]} ${year}\n`;
-      text += `Data Sources: ${dept.dataSources}\n\n`;
-      text += "=" .repeat(70) + "\n";
-      text += "PERFORMANCE METRICS\n";
-      text += "=".repeat(70) + "\n\n";
-
+      let text = "COFFMAN QAPI  |  " + dept.name.toUpperCase() + "  |  MONTHLY INPUT FORM\n";
+      text += "Position: " + dept.name + "\nReporting Month: " + MONTHS[month] + " " + year + "\n";
+      text += "Data Sources: " + (dept.dataSources || "") + "\n\n" + "=".repeat(70) + "\nPERFORMANCE METRICS\n" + "=".repeat(70) + "\n\n";
       dept.kpis.forEach((kpi, i) => {
         const k = kpiData[i] || {};
-        const line = `${kpi.metric}\n`;
-        const vals = `  Prior: ${k.prior || "\u2014"}  |  Current: ${k.current || "\u2014"}  |  Threshold: ${kpi.threshold || "\u2014"}`;
-        const notes = k.notes ? `\n  Notes: ${k.notes}` : "";
-        text += line + vals + notes + "\n\n";
+        text += kpi.metric + "\n  Prior: " + (k.prior || "\u2014") + "  |  Current: " + (k.current || "\u2014") + "  |  Threshold: " + (kpi.threshold || "\u2014");
+        if (k.notes) text += "\n  Notes: " + k.notes;
+        text += "\n\n";
       });
-
-      text += "=".repeat(70) + "\n";
-      text += "OPPORTUNITIES FOR IMPROVEMENT / BARRIERS\n";
-      text += "=".repeat(70) + "\n\n";
-      const opps = formData.opportunities || [];
-      opps.forEach((o, i) => {
-        if (o) text += `${i+1}. ${o}\n`;
-      });
-
-      text += "\n" + "=".repeat(70) + "\n";
-      text += "PLAN FOR IMPROVEMENT\n";
-      text += "=".repeat(70) + "\n\n";
-      const plans = formData.plans || [];
-      plans.forEach((p, i) => {
-        if (p.action) {
-          text += `${i+1}. ${p.action}\n   Responsible: ${p.responsible || "\u2014"}  |  Due: ${p.dueDate || "\u2014"}  |  Status: ${p.status || "\u2014"}\n\n`;
-        }
-      });
-
-      text += `\nPrepared by: ${formData.preparedBy || ""}  |  Date: ${formData.preparedDate || ""}  |  Presented at QAPI: ${formData.presentedAtQapi ? "Yes" : "No"}\n`;
-
-      navigator.clipboard.writeText(text).then(() => {
-        alert("Copied to clipboard! Paste into email.");
-      });
+      text += "=".repeat(70) + "\nOPPORTUNITIES FOR IMPROVEMENT / BARRIERS\n" + "=".repeat(70) + "\n\n";
+      (formData.opportunities || []).forEach((o, i) => { if (o) text += (i+1) + ". " + o + "\n"; });
+      text += "\n" + "=".repeat(70) + "\nPLAN FOR IMPROVEMENT\n" + "=".repeat(70) + "\n\n";
+      (formData.plans || []).forEach((p, i) => { if (p.action) text += (i+1) + ". " + p.action + "\n   Responsible: " + (p.responsible||"\u2014") + "  |  Due: " + (p.dueDate||"\u2014") + "  |  Status: " + (p.status||"\u2014") + "\n\n"; });
+      text += "\nPrepared by: " + (formData.preparedBy||"") + "  |  Date: " + (formData.preparedDate||"") + "  |  Presented at QAPI: " + (formData.presentedAtQapi ? "Yes" : "No") + "\n";
+      navigator.clipboard.writeText(text);
+      return true;
     }
 
     /* ==============================================================
-       MAIN APP COMPONENT
+       MAIN APP
        ============================================================== */
     function App() {
-      const [screen, setScreen] = useState("home"); // home | form
+      const [screen, setScreen] = useState("home");
+      const [config, setConfig] = useState(getConfig);
+      const [departments, setDepartments] = useState(FALLBACK_DEPARTMENTS);
       const [selectedDept, setSelectedDept] = useState(null);
-      const [allData, setAllData] = useState(loadSavedData);
+      const [allData, setAllData] = useState(getLocalData);
+      const [loading, setLoading] = useState(false);
+      const [saving, setSaving] = useState(false);
+      const [toast, setToast] = useState(null);
+      const [connected, setConnected] = useState(false);
 
       const now = new Date();
       const [month, setMonth] = useState(now.getMonth());
       const [year, setYear] = useState(now.getFullYear());
 
-      const formKey = selectedDept ? getFormKey(selectedDept.id, month, year) : null;
+      const scriptUrl = config.scriptUrl || "";
+
+      // Load config from Google Sheet on mount
+      useEffect(() => {
+        if (scriptUrl) loadSheetConfig();
+      }, [scriptUrl]);
+
+      async function loadSheetConfig() {
+        try {
+          setLoading(true);
+          const result = await fetchFromSheet(scriptUrl, "config");
+          if (result.success && result.departments) {
+            setDepartments(result.departments);
+            setConnected(true);
+          }
+        } catch (e) {
+          console.log("Sheet not connected, using fallback data");
+          setConnected(false);
+        } finally {
+          setLoading(false);
+        }
+      }
+
+      // Load existing data from sheet for selected department
+      async function loadDeptDataFromSheet(deptName) {
+        if (!scriptUrl || !connected) return;
+        try {
+          const result = await fetchFromSheet(scriptUrl, "data", { dept: deptName });
+          if (result.success && result.data) {
+            const d = result.data;
+            const key = getFormKey(deptName, month, year);
+            const kpis = {};
+            (d.kpis || []).forEach((k, i) => {
+              kpis[i] = { prior: k.prior, current: k.current, notes: k.notes };
+            });
+            const formData = {
+              kpis,
+              opportunities: d.opportunities?.length ? d.opportunities : ["","",""],
+              plans: d.plans?.length ? d.plans : [{},{},{},{}],
+              preparedBy: "",
+              preparedDate: "",
+              presentedAtQapi: false,
+            };
+            setAllData(prev => {
+              const next = { ...prev, [key]: formData };
+              saveLocalData(next);
+              return next;
+            });
+          }
+        } catch (e) { /* use local data */ }
+      }
+
+      // Save to Google Sheet
+      async function saveToSheet(deptName, formData, dept) {
+        if (!scriptUrl || !connected) return;
+        try {
+          setSaving(true);
+          const kpiPayload = dept.kpis.map((kpi, i) => {
+            const k = formData.kpis?.[i] || {};
+            return { prior: k.prior || "", current: k.current || "", notes: k.notes || "" };
+          });
+          await postToSheet(scriptUrl, {
+            dept: deptName,
+            data: {
+              reportingMonth: MONTHS[month] + " " + year,
+              kpis: kpiPayload,
+              opportunities: formData.opportunities || [],
+              plans: formData.plans || [],
+            }
+          });
+          setToast({ message: "Saved to Google Sheet", type: "success" });
+        } catch (e) {
+          setToast({ message: "Could not save to sheet. Data saved locally.", type: "error" });
+        } finally {
+          setSaving(false);
+        }
+      }
+
+      const formKey = selectedDept ? getFormKey(selectedDept, month, year) : null;
+      const dept = selectedDept ? departments[selectedDept] : null;
 
       const formData = useMemo(() => {
         if (!formKey) return null;
         return allData[formKey] || {
-          deptHead: selectedDept?.deptHead || "",
           kpis: {},
           opportunities: ["", "", ""],
           plans: [{},{},{},{}],
@@ -767,179 +445,202 @@
           preparedDate: "",
           presentedAtQapi: false,
         };
-      }, [formKey, allData, selectedDept]);
+      }, [formKey, allData]);
 
       const updateForm = useCallback((updater) => {
         setAllData(prev => {
           const current = prev[formKey] || {
-            deptHead: selectedDept?.deptHead || "",
-            kpis: {},
-            opportunities: ["", "", ""],
-            plans: [{},{},{},{}],
-            preparedBy: "",
-            preparedDate: "",
-            presentedAtQapi: false,
+            kpis: {}, opportunities: ["","",""], plans: [{},{},{},{}],
+            preparedBy: "", preparedDate: "", presentedAtQapi: false,
           };
           const updated = typeof updater === "function" ? updater(current) : { ...current, ...updater };
           const next = { ...prev, [formKey]: updated };
-          saveData(next);
+          saveLocalData(next);
           return next;
         });
-      }, [formKey, selectedDept]);
+      }, [formKey]);
 
-      function openDept(dept) {
-        setSelectedDept(dept);
+      function openDept(deptName) {
+        setSelectedDept(deptName);
         setScreen("form");
+        loadDeptDataFromSheet(deptName);
       }
 
-      /* ---- Determine previous month data for prior-month auto-fill ---- */
-      const prevMonth = month === 0 ? 11 : month - 1;
-      const prevYear = month === 0 ? year - 1 : year;
-      const prevFormKey = selectedDept ? getFormKey(selectedDept.id, prevMonth, prevYear) : null;
-      const prevFormData = prevFormKey ? allData[prevFormKey] : null;
+      const deptList = useMemo(() => Object.keys(departments).sort(), [departments]);
 
-      /* ==============================================================
-         HOME SCREEN
-         ============================================================== */
-      if (screen === "home") {
+      /* ---- SETUP SCREEN ---- */
+      if (screen === "setup") {
         return (
-          <div className="max-w-4xl mx-auto p-4">
-            {/* Header */}
-            <div className="bg-qapi-blue text-white rounded-xl p-6 mb-6 shadow-lg">
-              <h1 className="text-2xl font-bold text-center">COFFMAN QAPI</h1>
-              <p className="text-center text-qapi-accent mt-1 text-sm">Monthly Department Input Forms</p>
-              <p className="text-center text-blue-200 text-xs mt-1">{FACILITY}</p>
+          <div className="max-w-2xl mx-auto p-4">
+            <div className="bg-qapi-blue text-white rounded-xl p-6 mb-6">
+              <h1 className="text-xl font-bold text-center">Google Sheet Connection Setup</h1>
             </div>
-
-            {/* Month/Year selector */}
-            <div className="bg-white rounded-lg shadow p-4 mb-6 flex flex-wrap items-center gap-3 justify-center">
-              <label className="font-semibold text-sm text-gray-600">Reporting Month:</label>
-              <select
-                className="field-input w-auto"
-                value={month}
-                onChange={e => setMonth(parseInt(e.target.value))}
-              >
-                {MONTHS.map((m, i) => <option key={i} value={i}>{m}</option>)}
-              </select>
-              <select
-                className="field-input w-auto"
-                value={year}
-                onChange={e => setYear(parseInt(e.target.value))}
-              >
-                {[2025, 2026, 2027, 2028].map(y => <option key={y} value={y}>{y}</option>)}
-              </select>
-            </div>
-
-            {/* Department cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {DEPARTMENTS.map(dept => {
-                const key = getFormKey(dept.id, month, year);
-                const data = allData[key];
-                const filled = data ? Object.keys(data.kpis || {}).length : 0;
-                const total = dept.kpis.length;
-                const pct = total > 0 ? Math.round((filled / total) * 100) : 0;
-                const hasOpps = data?.opportunities?.some(o => o?.trim());
-                return (
-                  <button
-                    key={dept.id}
-                    onClick={() => openDept(dept)}
-                    className="bg-white rounded-lg shadow hover:shadow-lg transition-all p-4 text-left border-l-4 border-qapi-blue hover:border-qapi-light"
-                  >
-                    <div className="font-bold text-qapi-blue text-sm">{dept.label}</div>
-                    <div className="text-xs text-gray-500 mt-1">{dept.deptHead}</div>
-                    <div className="mt-3 flex items-center gap-2">
-                      <div className="flex-1 bg-gray-200 rounded-full h-2">
-                        <div
-                          className="bg-qapi-blue rounded-full h-2 transition-all"
-                          style={{ width: `${pct}%` }}
-                        />
-                      </div>
-                      <span className="text-xs text-gray-500 font-medium">{filled}/{total}</span>
-                    </div>
-                    {hasOpps && <span className="text-xs text-qapi-green mt-2 inline-block">Opportunities noted</span>}
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Summary / Brief to DON button */}
-            <div className="mt-6 text-center">
-              <button
-                onClick={() => generateBriefToDON(allData, month, year)}
-                className="bg-qapi-blue text-white px-6 py-3 rounded-lg hover:bg-qapi-light transition font-semibold shadow"
-              >
-                Generate Brief to DON (All Departments)
+            <div className="bg-white rounded-lg shadow p-6 space-y-4">
+              <div>
+                <label className="block font-semibold text-sm mb-1">Google Apps Script Web App URL</label>
+                <input
+                  className="field-input"
+                  placeholder="https://script.google.com/macros/s/AKfycb.../exec"
+                  value={config.scriptUrl || ""}
+                  onChange={e => {
+                    const c = { ...config, scriptUrl: e.target.value };
+                    setConfig(c);
+                    saveConfig(c);
+                  }}
+                />
+                <p className="text-xs text-gray-500 mt-1">Paste the URL from your Google Apps Script deployment</p>
+              </div>
+              <div className="bg-blue-50 rounded-lg p-4 text-sm space-y-2">
+                <p className="font-bold text-qapi-blue">Setup Instructions:</p>
+                <ol className="list-decimal pl-5 space-y-1 text-gray-700">
+                  <li>Upload the <strong>Coffman_QAPI_Monthly_Input_Template.xlsx</strong> to Google Drive</li>
+                  <li>Open it in Google Sheets</li>
+                  <li>Go to <strong>Extensions &gt; Apps Script</strong></li>
+                  <li>Delete any existing code and paste the contents of <strong>qapi-apps-script.js</strong></li>
+                  <li>Click <strong>Deploy &gt; New deployment</strong></li>
+                  <li>Type: <strong>Web app</strong> | Execute as: <strong>Me</strong> | Access: <strong>Anyone</strong></li>
+                  <li>Click Deploy, authorize when prompted, and copy the URL</li>
+                  <li>Paste the URL above</li>
+                </ol>
+              </div>
+              {config.scriptUrl && (
+                <button
+                  onClick={async () => {
+                    setLoading(true);
+                    try {
+                      const result = await fetchFromSheet(config.scriptUrl, "config");
+                      if (result.success) {
+                        setDepartments(result.departments);
+                        setConnected(true);
+                        setToast({ message: "Connected! " + Object.keys(result.departments).length + " departments loaded.", type: "success" });
+                      } else {
+                        setToast({ message: "Error: " + (result.error || "Unknown"), type: "error" });
+                      }
+                    } catch (e) {
+                      setToast({ message: "Connection failed. Check the URL.", type: "error" });
+                    }
+                    setLoading(false);
+                  }}
+                  className="bg-qapi-blue text-white px-6 py-3 rounded-lg font-semibold w-full hover:opacity-90"
+                  disabled={loading}
+                >
+                  {loading ? <span className="spinner mr-2" /> : null}
+                  Test Connection
+                </button>
+              )}
+              <button onClick={() => setScreen("home")} className="bg-gray-200 px-4 py-2 rounded-lg text-sm w-full">
+                &larr; Back to Home
               </button>
             </div>
-
-            <p className="text-center text-xs text-gray-400 mt-6">
-              Data saved locally in your browser. Export to Word or copy to email before clearing browser data.
-            </p>
+            {toast && <Toast message={toast.message} type={toast.type} onDone={() => setToast(null)} />}
           </div>
         );
       }
 
-      /* ==============================================================
-         FORM SCREEN — individual department
-         ============================================================== */
-      if (screen === "form" && selectedDept && formData) {
-        const dept = selectedDept;
-        const kpiData = formData.kpis || {};
+      /* ---- HOME SCREEN ---- */
+      if (screen === "home") {
+        return (
+          <div className="max-w-4xl mx-auto p-4">
+            <div className="bg-qapi-blue text-white rounded-xl p-6 mb-6 shadow-lg">
+              <h1 className="text-2xl font-bold text-center">COFFMAN QAPI</h1>
+              <p className="text-center text-qapi-accent mt-1 text-sm">Monthly Department Input Forms</p>
+              <p className="text-center text-blue-200 text-xs mt-1">{FACILITY}</p>
+              <div className="text-center mt-2">
+                {connected
+                  ? <span className="inline-flex items-center gap-1 bg-green-600 text-white text-xs px-3 py-1 rounded-full">
+                      <span className="w-2 h-2 bg-green-300 rounded-full inline-block" /> Connected to Google Sheet
+                    </span>
+                  : <span className="inline-flex items-center gap-1 bg-yellow-600 text-white text-xs px-3 py-1 rounded-full">
+                      Offline Mode (local storage only)
+                    </span>
+                }
+              </div>
+            </div>
 
+            <div className="bg-white rounded-lg shadow p-4 mb-6 flex flex-wrap items-center gap-3 justify-center">
+              <label className="font-semibold text-sm text-gray-600">Reporting Month:</label>
+              <select className="field-input w-auto" value={month} onChange={e => setMonth(parseInt(e.target.value))}>
+                {MONTHS.map((m, i) => <option key={i} value={i}>{m}</option>)}
+              </select>
+              <select className="field-input w-auto" value={year} onChange={e => setYear(parseInt(e.target.value))}>
+                {[2025,2026,2027,2028].map(y => <option key={y} value={y}>{y}</option>)}
+              </select>
+              <button onClick={() => setScreen("setup")} className="ml-auto text-xs text-qapi-light hover:underline no-print">
+                {connected ? "Sheet Settings" : "Connect Google Sheet"}
+              </button>
+            </div>
+
+            {loading ? (
+              <div className="text-center py-12"><span className="spinner" /><p className="text-sm text-gray-500 mt-3">Loading from Google Sheet...</p></div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {deptList.map(deptName => {
+                  const d = departments[deptName];
+                  const key = getFormKey(deptName, month, year);
+                  const data = allData[key];
+                  const filled = data ? Object.keys(data.kpis || {}).filter(k => data.kpis[k]?.current).length : 0;
+                  const total = d.kpis.length;
+                  const pct = total > 0 ? Math.round((filled / total) * 100) : 0;
+                  return (
+                    <button key={deptName} onClick={() => openDept(deptName)}
+                      className="bg-white rounded-lg shadow hover:shadow-lg transition-all p-4 text-left border-l-4 border-qapi-blue hover:border-qapi-light">
+                      <div className="font-bold text-qapi-blue text-sm">{deptName}</div>
+                      <div className="mt-3 flex items-center gap-2">
+                        <div className="flex-1 bg-gray-200 rounded-full h-2">
+                          <div className="bg-qapi-blue rounded-full h-2 transition-all" style={{ width: `${pct}%` }} />
+                        </div>
+                        <span className="text-xs text-gray-500 font-medium">{filled}/{total}</span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            <p className="text-center text-xs text-gray-400 mt-6">
+              {connected ? "Data syncs with Google Sheet. Also saved locally as backup." : "Data saved locally. Connect a Google Sheet for shared access."}
+            </p>
+            {toast && <Toast message={toast.message} type={toast.type} onDone={() => setToast(null)} />}
+          </div>
+        );
+      }
+
+      /* ---- FORM SCREEN ---- */
+      if (screen === "form" && dept && formData) {
+        const kpiData = formData.kpis || {};
         return (
           <div className="max-w-5xl mx-auto p-4">
-            {/* Back + actions bar */}
             <div className="flex flex-wrap items-center gap-2 mb-4 no-print">
-              <button
-                onClick={() => setScreen("home")}
-                className="bg-gray-200 hover:bg-gray-300 px-4 py-2 rounded-lg text-sm font-medium"
-              >
-                &larr; All Departments
-              </button>
+              <button onClick={() => setScreen("home")} className="bg-gray-200 hover:bg-gray-300 px-4 py-2 rounded-lg text-sm font-medium">&larr; All Departments</button>
               <div className="flex-1" />
-              <button
-                onClick={() => copyToClipboard(dept, formData, month, year)}
-                className="bg-qapi-green text-white px-4 py-2 rounded-lg text-sm font-semibold hover:opacity-90"
-              >
-                Copy to Clipboard
-              </button>
-              <button
-                onClick={() => exportToWord(dept, formData, month, year)}
-                className="bg-qapi-blue text-white px-4 py-2 rounded-lg text-sm font-semibold hover:opacity-90"
-              >
-                Export to Word
-              </button>
+              {connected && (
+                <button onClick={() => saveToSheet(selectedDept, formData, dept)} disabled={saving}
+                  className="bg-blue-500 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:opacity-90 flex items-center gap-2">
+                  {saving && <span className="spinner" style={{width:16,height:16,borderWidth:2}} />}
+                  Save to Sheet
+                </button>
+              )}
+              <button onClick={() => { copyToClipboard(dept, formData, month, year); setToast({ message: "Copied to clipboard!", type: "success" }); }}
+                className="bg-qapi-green text-white px-4 py-2 rounded-lg text-sm font-semibold hover:opacity-90">Copy to Clipboard</button>
+              <button onClick={() => exportToWord(dept, formData, month, year)}
+                className="bg-qapi-blue text-white px-4 py-2 rounded-lg text-sm font-semibold hover:opacity-90">Export to Word</button>
             </div>
 
-            {/* Title banner */}
             <div className="bg-qapi-blue text-white rounded-t-lg p-4 text-center">
-              <h2 className="text-lg font-bold">{dept.title}</h2>
+              <h2 className="text-lg font-bold">COFFMAN QAPI  |  {dept.name.toUpperCase()}  |  MONTHLY INPUT FORM</h2>
             </div>
-
-            {/* Dept head / month info */}
             <div className="bg-white border border-gray-200 p-4 flex flex-wrap gap-4 items-center">
               <div className="flex-1 min-w-[200px]">
-                <label className="text-xs text-gray-500 font-medium">Department Head</label>
-                <input
-                  className="field-input mt-1"
-                  value={formData.deptHead || ""}
-                  onChange={e => updateForm({ deptHead: e.target.value })}
-                />
-              </div>
-              <div>
-                <label className="text-xs text-gray-500 font-medium">Extension</label>
-                <div className="mt-1 text-sm font-medium text-gray-700 py-2">{dept.extension}</div>
+                <label className="text-xs text-gray-500 font-medium">Position</label>
+                <div className="mt-1 text-sm font-medium text-gray-700 py-2">{dept.name}</div>
               </div>
               <div>
                 <label className="text-xs text-gray-500 font-medium">Reporting Month</label>
                 <div className="mt-1 text-sm font-medium text-gray-700 py-2">{MONTHS[month]} {year}</div>
               </div>
             </div>
-
-            {/* Data sources */}
-            <div className="bg-gray-50 border border-gray-200 border-t-0 p-3 text-xs text-gray-500 italic">
-              Data Sources: {dept.dataSources}
-            </div>
+            {dept.dataSources && (
+              <div className="bg-gray-50 border border-gray-200 border-t-0 p-3 text-xs text-gray-500 italic">Data Sources: {dept.dataSources}</div>
+            )}
 
             {/* KPI TABLE */}
             <div className="overflow-x-auto mt-4">
@@ -957,71 +658,29 @@
                 <tbody>
                   {dept.kpis.map((kpi, i) => {
                     const k = kpiData[i] || {};
-                    const trend = getTrend(k.prior, k.current, kpi.threshold);
+                    const trend = getTrend(k.prior, k.current);
                     const status = checkThreshold(k.current, kpi.threshold);
-                    const isAlt = i % 2 === 1;
-                    // Auto-fill prior from previous month's current
-                    const prevKpi = prevFormData?.kpis?.[i];
-                    const priorDefault = prevKpi?.current || "";
-
                     return (
-                      <tr key={i} className={isAlt ? "bg-gray-50" : "bg-white"}>
+                      <tr key={i} className={i % 2 === 1 ? "bg-gray-50" : "bg-white"}>
                         <td className="p-2 pl-3 text-sm border-b border-gray-100 font-medium">{kpi.metric}</td>
                         <td className="p-1 border-b border-gray-100">
-                          <input
-                            className="field-input kpi-input text-sm"
-                            placeholder={priorDefault || "\u2014"}
-                            value={k.prior ?? ""}
-                            onChange={e => {
-                              updateForm(prev => {
-                                const kpis = { ...prev.kpis };
-                                kpis[i] = { ...kpis[i], prior: e.target.value };
-                                return { ...prev, kpis };
-                              });
-                            }}
-                          />
+                          <input className="field-input kpi-input text-sm" placeholder={"\u2014"} value={k.prior ?? ""}
+                            onChange={e => updateForm(prev => { const kpis = { ...prev.kpis }; kpis[i] = { ...kpis[i], prior: e.target.value }; return { ...prev, kpis }; })} />
                         </td>
                         <td className="p-1 border-b border-gray-100">
-                          <input
-                            className="field-input kpi-input text-sm"
-                            placeholder={"\u2014"}
-                            value={k.current ?? ""}
-                            onChange={e => {
-                              updateForm(prev => {
-                                const kpis = { ...prev.kpis };
-                                kpis[i] = { ...kpis[i], current: e.target.value };
-                                return { ...prev, kpis };
-                              });
-                            }}
-                          />
+                          <input className="field-input kpi-input text-sm" placeholder={"\u2014"} value={k.current ?? ""}
+                            onChange={e => updateForm(prev => { const kpis = { ...prev.kpis }; kpis[i] = { ...kpis[i], current: e.target.value }; return { ...prev, kpis }; })} />
                         </td>
-                        <td className="p-2 text-center text-xs border-b border-gray-100 text-gray-600">
-                          {kpi.threshold || "\u2014"}
-                        </td>
+                        <td className="p-2 text-center text-xs border-b border-gray-100 text-gray-600">{kpi.threshold || "\u2014"}</td>
                         <td className="p-2 text-center border-b border-gray-100">
                           {status === "met" && <span className="status-badge status-met">Met</span>}
                           {status === "not-met" && <span className="status-badge status-not-met">Not Met</span>}
                           {status === "track" && <span className="status-badge status-track">Track</span>}
-                          {status === "na" && k.current && <span className="status-badge status-na">N/A</span>}
-                          {trend && (
-                            <span className={`ml-1 text-lg font-bold ${trend === "up" ? "trend-up" : trend === "down" ? "trend-down" : "trend-flat"}`}>
-                              {getTrendIcon(trend)}
-                            </span>
-                          )}
+                          {trend && <span className={`ml-1 text-lg font-bold ${trend === "up" ? "trend-up" : trend === "down" ? "trend-down" : "trend-flat"}`}>{getTrendIcon(trend)}</span>}
                         </td>
                         <td className="p-1 border-b border-gray-100">
-                          <input
-                            className="field-input text-xs"
-                            placeholder="Notes..."
-                            value={k.notes ?? ""}
-                            onChange={e => {
-                              updateForm(prev => {
-                                const kpis = { ...prev.kpis };
-                                kpis[i] = { ...kpis[i], notes: e.target.value };
-                                return { ...prev, kpis };
-                              });
-                            }}
-                          />
+                          <input className="field-input text-xs" placeholder="Notes..." value={k.notes ?? ""}
+                            onChange={e => updateForm(prev => { const kpis = { ...prev.kpis }; kpis[i] = { ...kpis[i], notes: e.target.value }; return { ...prev, kpis }; })} />
                         </td>
                       </tr>
                     );
@@ -1032,26 +691,15 @@
 
             {/* OPPORTUNITIES */}
             <div className="mt-6">
-              <div className="bg-qapi-blue text-white p-3 rounded-t-lg font-semibold text-sm">
-                OPPORTUNITIES FOR IMPROVEMENT / BARRIERS (identify at least 1)
-              </div>
+              <div className="bg-qapi-blue text-white p-3 rounded-t-lg font-semibold text-sm">OPPORTUNITIES FOR IMPROVEMENT / BARRIERS (identify at least 1)</div>
               <div className="bg-white border border-gray-200 border-t-0 p-4 space-y-3">
                 {(formData.opportunities || ["","",""]).map((opp, i) => (
                   <div key={i} className="flex gap-2 items-start">
                     <span className="text-sm font-bold text-gray-400 mt-2">{i+1}.</span>
-                    <textarea
-                      className="field-input text-sm"
-                      rows={2}
-                      placeholder={i === 0 ? "Required: identify at least one opportunity or barrier" : "Optional additional opportunity..."}
+                    <textarea className="field-input text-sm" rows={2}
+                      placeholder={i === 0 ? "Required: identify at least one opportunity or barrier" : "Optional..."}
                       value={opp}
-                      onChange={e => {
-                        updateForm(prev => {
-                          const opps = [...(prev.opportunities || ["","",""])];
-                          opps[i] = e.target.value;
-                          return { ...prev, opportunities: opps };
-                        });
-                      }}
-                    />
+                      onChange={e => updateForm(prev => { const opps = [...(prev.opportunities || ["","",""])]; opps[i] = e.target.value; return { ...prev, opportunities: opps }; })} />
                   </div>
                 ))}
               </div>
@@ -1059,80 +707,29 @@
 
             {/* PLAN FOR IMPROVEMENT */}
             <div className="mt-6">
-              <div className="bg-qapi-blue text-white p-3 rounded-t-lg font-semibold text-sm">
-                PLAN FOR IMPROVEMENT
-              </div>
+              <div className="bg-qapi-blue text-white p-3 rounded-t-lg font-semibold text-sm">PLAN FOR IMPROVEMENT</div>
               <div className="overflow-x-auto">
                 <table className="w-full bg-white border border-gray-200 border-t-0">
-                  <thead>
-                    <tr className="bg-gray-100 text-xs text-gray-600">
-                      <th className="p-2 text-left font-semibold" style={{width:"40%"}}>Action / Intervention</th>
-                      <th className="p-2 text-left font-semibold" style={{width:"22%"}}>Responsible</th>
-                      <th className="p-2 text-left font-semibold" style={{width:"16%"}}>Due Date</th>
-                      <th className="p-2 text-left font-semibold" style={{width:"22%"}}>Status</th>
-                    </tr>
-                  </thead>
+                  <thead><tr className="bg-gray-100 text-xs text-gray-600">
+                    <th className="p-2 text-left font-semibold" style={{width:"40%"}}>Action / Intervention</th>
+                    <th className="p-2 text-left font-semibold" style={{width:"22%"}}>Responsible</th>
+                    <th className="p-2 text-left font-semibold" style={{width:"16%"}}>Due Date</th>
+                    <th className="p-2 text-left font-semibold" style={{width:"22%"}}>Status</th>
+                  </tr></thead>
                   <tbody>
                     {(formData.plans || [{},{},{},{}]).map((plan, i) => (
                       <tr key={i} className="border-b border-gray-100">
-                        <td className="p-1">
-                          <input
-                            className="field-input text-sm"
-                            placeholder="Action item..."
-                            value={plan.action || ""}
-                            onChange={e => {
-                              updateForm(prev => {
-                                const plans = [...(prev.plans || [{},{},{},{}])];
-                                plans[i] = { ...plans[i], action: e.target.value };
-                                return { ...prev, plans };
-                              });
-                            }}
-                          />
-                        </td>
-                        <td className="p-1">
-                          <input
-                            className="field-input text-sm"
-                            placeholder="Who?"
-                            value={plan.responsible || ""}
-                            onChange={e => {
-                              updateForm(prev => {
-                                const plans = [...(prev.plans || [{},{},{},{}])];
-                                plans[i] = { ...plans[i], responsible: e.target.value };
-                                return { ...prev, plans };
-                              });
-                            }}
-                          />
-                        </td>
-                        <td className="p-1">
-                          <input
-                            type="date"
-                            className="field-input text-sm"
-                            value={plan.dueDate || ""}
-                            onChange={e => {
-                              updateForm(prev => {
-                                const plans = [...(prev.plans || [{},{},{},{}])];
-                                plans[i] = { ...plans[i], dueDate: e.target.value };
-                                return { ...prev, plans };
-                              });
-                            }}
-                          />
-                        </td>
-                        <td className="p-1">
-                          <select
-                            className="field-input text-sm"
-                            value={plan.status || ""}
-                            onChange={e => {
-                              updateForm(prev => {
-                                const plans = [...(prev.plans || [{},{},{},{}])];
-                                plans[i] = { ...plans[i], status: e.target.value };
-                                return { ...prev, plans };
-                              });
-                            }}
-                          >
-                            <option value="">Select...</option>
-                            {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
-                          </select>
-                        </td>
+                        <td className="p-1"><input className="field-input text-sm" placeholder="Action item..." value={plan.action || ""}
+                          onChange={e => updateForm(prev => { const plans = [...(prev.plans || [{},{},{},{}])]; plans[i] = { ...plans[i], action: e.target.value }; return { ...prev, plans }; })} /></td>
+                        <td className="p-1"><input className="field-input text-sm" placeholder="Who?" value={plan.responsible || ""}
+                          onChange={e => updateForm(prev => { const plans = [...(prev.plans || [{},{},{},{}])]; plans[i] = { ...plans[i], responsible: e.target.value }; return { ...prev, plans }; })} /></td>
+                        <td className="p-1"><input type="date" className="field-input text-sm" value={plan.dueDate || ""}
+                          onChange={e => updateForm(prev => { const plans = [...(prev.plans || [{},{},{},{}])]; plans[i] = { ...plans[i], dueDate: e.target.value }; return { ...prev, plans }; })} /></td>
+                        <td className="p-1"><select className="field-input text-sm" value={plan.status || ""}
+                          onChange={e => updateForm(prev => { const plans = [...(prev.plans || [{},{},{},{}])]; plans[i] = { ...plans[i], status: e.target.value }; return { ...prev, plans }; })}>
+                          <option value="">Select...</option>
+                          {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                        </select></td>
                       </tr>
                     ))}
                   </tbody>
@@ -1140,132 +737,51 @@
               </div>
             </div>
 
-            {/* SIGNATURE SECTION */}
+            {/* SIGNATURE */}
             <div className="mt-6 bg-white rounded-lg border border-gray-200 p-4">
               <div className="flex flex-wrap gap-4">
                 <div className="flex-1 min-w-[200px]">
                   <label className="text-xs text-gray-500 font-medium">Prepared by</label>
-                  <input
-                    className="field-input mt-1"
-                    placeholder="Your name"
-                    value={formData.preparedBy || ""}
-                    onChange={e => updateForm({ preparedBy: e.target.value })}
-                  />
+                  <input className="field-input mt-1" placeholder="Your name" value={formData.preparedBy || ""}
+                    onChange={e => updateForm({ preparedBy: e.target.value })} />
                 </div>
                 <div className="min-w-[160px]">
                   <label className="text-xs text-gray-500 font-medium">Date</label>
-                  <input
-                    type="date"
-                    className="field-input mt-1"
-                    value={formData.preparedDate || ""}
-                    onChange={e => updateForm({ preparedDate: e.target.value })}
-                  />
+                  <input type="date" className="field-input mt-1" value={formData.preparedDate || ""}
+                    onChange={e => updateForm({ preparedDate: e.target.value })} />
                 </div>
                 <div className="flex items-end pb-1 gap-2">
                   <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      className="w-5 h-5 rounded"
-                      checked={formData.presentedAtQapi || false}
-                      onChange={e => updateForm({ presentedAtQapi: e.target.checked })}
-                    />
+                    <input type="checkbox" className="w-5 h-5 rounded" checked={formData.presentedAtQapi || false}
+                      onChange={e => updateForm({ presentedAtQapi: e.target.checked })} />
                     <span className="text-sm font-medium">Presented at QAPI</span>
                   </label>
                 </div>
               </div>
             </div>
 
-            {/* Action buttons at bottom */}
+            {/* BOTTOM ACTIONS */}
             <div className="mt-6 flex flex-wrap gap-3 justify-center no-print mb-8">
-              <button
-                onClick={() => copyToClipboard(dept, formData, month, year)}
-                className="bg-qapi-green text-white px-6 py-3 rounded-lg font-semibold hover:opacity-90 shadow"
-              >
-                Copy to Clipboard (for email)
-              </button>
-              <button
-                onClick={() => exportToWord(dept, formData, month, year)}
-                className="bg-qapi-blue text-white px-6 py-3 rounded-lg font-semibold hover:opacity-90 shadow"
-              >
-                Export to Word (.docx)
-              </button>
-              <button
-                onClick={() => window.print()}
-                className="bg-gray-600 text-white px-6 py-3 rounded-lg font-semibold hover:opacity-90 shadow"
-              >
-                Print
-              </button>
+              {connected && (
+                <button onClick={() => saveToSheet(selectedDept, formData, dept)} disabled={saving}
+                  className="bg-blue-500 text-white px-6 py-3 rounded-lg font-semibold hover:opacity-90 shadow flex items-center gap-2">
+                  {saving && <span className="spinner" style={{width:18,height:18,borderWidth:2}} />}
+                  Save to Google Sheet
+                </button>
+              )}
+              <button onClick={() => { copyToClipboard(dept, formData, month, year); setToast({ message: "Copied!", type: "success" }); }}
+                className="bg-qapi-green text-white px-6 py-3 rounded-lg font-semibold hover:opacity-90 shadow">Copy to Clipboard</button>
+              <button onClick={() => exportToWord(dept, formData, month, year)}
+                className="bg-qapi-blue text-white px-6 py-3 rounded-lg font-semibold hover:opacity-90 shadow">Export to Word</button>
+              <button onClick={() => window.print()} className="bg-gray-600 text-white px-6 py-3 rounded-lg font-semibold hover:opacity-90 shadow">Print</button>
             </div>
+            {toast && <Toast message={toast.message} type={toast.type} onDone={() => setToast(null)} />}
           </div>
         );
       }
-
       return null;
     }
 
-    /* ==============================================================
-       BRIEF TO DON — summary across all departments
-       ============================================================== */
-    async function generateBriefToDON(allData, month, year) {
-      let text = `COFFMAN QAPI \u2014 BRIEF TO DON\n`;
-      text += `Reporting Month: ${MONTHS[month]} ${year}\n`;
-      text += `${"=".repeat(70)}\n\n`;
-
-      DEPARTMENTS.forEach(dept => {
-        const key = getFormKey(dept.id, month, year);
-        const data = allData[key];
-        text += `\u25A0 ${dept.label.toUpperCase()} (${dept.deptHead})\n`;
-
-        if (!data || Object.keys(data.kpis || {}).length === 0) {
-          text += `  [No data submitted yet]\n\n`;
-          return;
-        }
-
-        // Show KPIs that have thresholds and are not met
-        const issues = [];
-        const kpiData = data.kpis || {};
-        dept.kpis.forEach((kpi, i) => {
-          const k = kpiData[i] || {};
-          if (k.current && kpi.threshold) {
-            const status = checkThreshold(k.current, kpi.threshold);
-            if (status === "not-met") {
-              issues.push(`  \u26A0 ${kpi.metric}: ${k.current} (target: ${kpi.threshold})`);
-            }
-          }
-        });
-
-        if (issues.length > 0) {
-          text += `  Thresholds NOT Met:\n`;
-          issues.forEach(iss => text += `${iss}\n`);
-        } else {
-          text += `  All thresholds met or tracked.\n`;
-        }
-
-        // Show opportunities
-        const opps = (data.opportunities || []).filter(o => o?.trim());
-        if (opps.length > 0) {
-          text += `  Opportunities:\n`;
-          opps.forEach((o, i) => text += `    ${i+1}. ${o}\n`);
-        }
-
-        text += "\n";
-      });
-
-      text += `\nGenerated: ${new Date().toLocaleDateString()}\n`;
-
-      try {
-        await navigator.clipboard.writeText(text);
-        alert("Brief to DON copied to clipboard! Paste into email.");
-      } catch {
-        // Fallback: open in new window
-        const w = window.open("", "_blank");
-        w.document.write(`<pre style="font-family:Consolas,monospace;white-space:pre-wrap;padding:20px;">${text.replace(/</g,"&lt;")}</pre>`);
-      }
-    }
-
-    /* ==============================================================
-       RENDER
-       ============================================================== */
     ReactDOM.render(<App />, document.getElementById("root"));
   </script>
 </body>
