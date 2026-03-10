@@ -158,8 +158,13 @@
     const CONFIG_KEY = "coffman_qapi_config";
     const DATA_KEY = "coffman_qapi_dept_input";
 
+    const DEFAULT_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxUce0HqpGQOk760SXUEIIcMRnfWTV-nf3-NIqk70VvMl4e6ZCYI-m2a6Na-GHod4_B4Q/exec";
     function getConfig() {
-      try { return JSON.parse(localStorage.getItem(CONFIG_KEY)) || {}; } catch { return {}; }
+      try {
+        const cfg = JSON.parse(localStorage.getItem(CONFIG_KEY)) || {};
+        if (!cfg.scriptUrl) cfg.scriptUrl = DEFAULT_SCRIPT_URL;
+        return cfg;
+      } catch { return { scriptUrl: DEFAULT_SCRIPT_URL }; }
     }
     function saveConfig(cfg) {
       localStorage.setItem(CONFIG_KEY, JSON.stringify(cfg));
