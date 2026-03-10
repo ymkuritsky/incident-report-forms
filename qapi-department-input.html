@@ -176,12 +176,25 @@
       localStorage.setItem(DATA_KEY, JSON.stringify(data));
     }
 
+    // Fix garbled UTF-8 em-dashes (â€" → —) in API responses
+    function fixEncoding(obj) {
+      if (typeof obj === 'string') return obj.replace(/\u00e2\u20ac\u201d/g, '\u2014').replace(/\u00e2\u20ac\u201c/g, '\u2013');
+      if (Array.isArray(obj)) return obj.map(fixEncoding);
+      if (obj && typeof obj === 'object') {
+        const fixed = {};
+        for (const [k, v] of Object.entries(obj)) fixed[k] = fixEncoding(v);
+        return fixed;
+      }
+      return obj;
+    }
+
     async function fetchFromSheet(scriptUrl, action, params = {}) {
       const url = new URL(scriptUrl);
       url.searchParams.set("action", action);
       Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
       const resp = await fetch(url.toString());
-      return resp.json();
+      const data = await resp.json();
+      return fixEncoding(data);
     }
 
     async function postToSheet(scriptUrl, payload) {
