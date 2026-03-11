@@ -511,14 +511,16 @@
               <div className="bg-blue-50 rounded-lg p-4 text-sm space-y-2">
                 <p className="font-bold text-qapi-blue">Setup Instructions:</p>
                 <ol className="list-decimal pl-5 space-y-1 text-gray-700">
-                  <li>Upload the <strong>Coffman_QAPI_Monthly_Input_Template.xlsx</strong> to Google Drive</li>
-                  <li>Open it in Google Sheets</li>
-                  <li>Go to <strong>Extensions &gt; Apps Script</strong></li>
-                  <li>Delete any existing code and paste the contents of <strong>qapi-apps-script.js</strong></li>
+                  <li>Create a new <strong>blank Google Sheet</strong></li>
+                  <li>Copy the <strong>Sheet ID</strong> from the URL (the long string between <code>/d/</code> and <code>/edit</code>)</li>
+                  <li>Go to <a href="https://script.google.com" target="_blank" className="text-blue-600 underline">script.google.com</a> &gt; <strong>New project</strong></li>
+                  <li>Delete any existing code and paste the contents of <strong>qapi-full-script.js</strong></li>
+                  <li>Update <strong>line 22</strong>: replace the SHEET_ID with your new Sheet ID</li>
+                  <li>In the function dropdown, select <strong>setupSheet</strong> and click <strong>Run</strong></li>
+                  <li>Authorize when prompted (click Advanced &gt; Go to project &gt; Allow)</li>
                   <li>Click <strong>Deploy &gt; New deployment</strong></li>
                   <li>Type: <strong>Web app</strong> | Execute as: <strong>Me</strong> | Access: <strong>Anyone</strong></li>
-                  <li>Click Deploy, authorize when prompted, and copy the URL</li>
-                  <li>Paste the URL above</li>
+                  <li>Click Deploy, copy the Web App URL, and paste it above</li>
                 </ol>
               </div>
               {config.scriptUrl && (
